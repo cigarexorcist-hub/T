@@ -681,40 +681,27 @@
 
   function portalHTML(forcedRole) {
     const role = forcedRole || sessionStore.role || 'investor';
+    const isAuditor = role === 'auditor';
+    const roleTitle = isAuditor ? 'بوابة المحاسب القانوني' : 'بوابة المستثمر';
+    const roleDesc = isAuditor
+      ? 'تحقق مهني من عيّنة معاملات موثقة مرتبطة بالمنشأة — لأغراض المراجعة والعناية الواجبة.'
+      : 'فحص عيّنة معاملات موثقة مرتبطة بالمنشأة — لأغراض العناية الواجبة الاستثمارية.';
     return `
     <div class="csv-wrap">
       <div class="csv-hero">
-        <h2>إثبات جدية المنشأة</h2>
-        <p>
-          قدّم عيّنة من روابط المعاملات الموثقة رسمياً المرتبطة بالمنشأة.
-          النظام يتحقق من صحة الروابط، يستخلص الأطراف والمبالغ، ويبني مؤشراً أوّلياً للجدية — ببساطة وقوة، دون تعقيد.
-        </p>
+        <h2>${roleTitle}</h2>
+        <p>${roleDesc}</p>
         <div class="csv-pills">
           <span>🔗 روابط رسمية فقط</span>
           <span>🛡️ حماية من الروابط المزيفة</span>
-          <span>⚡ مؤشر فوري</span>
-          <span>👁️ متابعة لحظية للعرض</span>
+          <span>⚡ مؤشر جدية فوري</span>
+          <span>${isAuditor ? '📑 للمحاسب القانوني' : '👤 للمستثمر'}</span>
         </div>
-      </div>
-
-      <div class="csv-portal-bar">
-        <button type="button" class="${role === 'investor' ? 'on' : ''}" data-portal-role="investor">بوابة المستثمر</button>
-        <button type="button" class="${role === 'auditor' ? 'on' : ''}" data-portal-role="auditor">بوابة المحاسب القانوني</button>
       </div>
 
       <div class="csv-card">
-        <h3>① هوية الفحص</h3>
-        <div class="sub">حدد دورك وأدخل رقم التعريف الرسمي للمنشأة محل العناية الواجبة</div>
-        <div class="csv-roles">
-          <button type="button" class="csv-role ${role === 'investor' ? 'on' : ''}" id="csv-role-investor" data-set-role="investor">
-            <strong>👤 مستثمر / جهة تمويل</strong>
-            <small>فحص عيّنة لأغراض العناية الواجبة</small>
-          </button>
-          <button type="button" class="csv-role ${role === 'auditor' ? 'on' : ''}" id="csv-role-auditor" data-set-role="auditor">
-            <strong>📑 محاسب قانوني</strong>
-            <small>تحقق مهني من عيّنة معاملات</small>
-          </button>
-        </div>
+        <h3>① بيانات المنشأة محل الفحص</h3>
+        <div class="sub">أدخل رقم التعريف الرسمي للمنشأة — أساس مطابقة العيّنة</div>
         <div class="csv-field">
           <label>رقم التعريف الرسمي للمنشأة <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
@@ -723,7 +710,7 @@
           <label>اسم المنشأة (اختياري — يُستكمل من العيّنة)</label>
           <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
         </div>
-        <div class="csv-field" id="csv-auditor-extra" style="display:${role === 'auditor' ? 'block' : 'none'}">
+        <div class="csv-field" id="csv-auditor-extra" style="display:${isAuditor ? 'block' : 'none'}">
           <label>مرجع مهني للمحاسب (اختياري في المحاكاة)</label>
           <input type="text" id="csv-auditor-ref" placeholder="رقم قيد / مرجع">
         </div>
@@ -973,28 +960,66 @@
     }
   };
 
-  // Hash deep-links: #investor | #auditor | #seriousness
+  // ========== دخول مباشر للمستثمر/المحاسب بدون تسجيل لجنة ==========
+  function openPublicPortal(role) {
+    ensureStyles();
+    let shell = document.getElementById('csv-public-shell');
+    if (!shell) {
+      shell = document.createElement('div');
+      shell.id = 'csv-public-shell';
+      shell.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#f4f6f9;overflow:auto;';
+      document.body.appendChild(shell);
+    }
+    shell.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+
+    const roleLabel = role === 'auditor' ? 'المحاسب القانوني' : 'المستثمر';
+    shell.innerHTML = `
+      <div style="max-width:960px;margin:0 auto;padding:20px 16px 40px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div style="font-weight:800;color:#0b1f3a;font-size:15px">منظومة لجان المعاينة · بوابة ${roleLabel}</div>
+          <button type="button" id="csv-public-close" style="border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:700;cursor:pointer;font-size:12px">إغلاق والعودة</button>
+        </div>
+        <div id="csv-public-root"></div>
+      </div>`;
+
+    const root = document.getElementById('csv-public-root');
+    sessionStore.role = role === 'auditor' ? 'auditor' : 'investor';
+    root.innerHTML = portalHTML(sessionStore.role);
+    bindPortalEvents(root);
+
+    document.getElementById('csv-public-close').onclick = closePublicPortal;
+  }
+
+  function closePublicPortal() {
+    const shell = document.getElementById('csv-public-shell');
+    if (shell) shell.style.display = 'none';
+    document.body.style.overflow = '';
+    // remove hash without reload
+    if (history.replaceState) {
+      history.replaceState(null, '', location.pathname + location.search);
+    } else {
+      location.hash = '';
+    }
+  }
+
+  // Hash deep-links: #investor | #auditor | #seriousness-monitor
   function handleHash() {
     const h = (location.hash || '').replace('#', '').toLowerCase();
     if (h === 'investor' || h === 'auditor') {
-      // Try open admin shell then portal
-      const adminBtn = document.querySelector('[onclick*="admin"], .btn-admin, #adminLoginBtn');
-      showSeriousnessSection(h);
-      // Ensure portal section visible
+      openPublicPortal(h);
+      return;
+    }
+    if (h === 'seriousness' || h === 'seriousness-monitor') {
+      // من داخل الأدمن فقط
       setTimeout(() => {
-        const portalSec = document.getElementById('bi-seriousness-portal');
-        const monitorSec = document.getElementById('bi-seriousness-monitor');
-        document.querySelectorAll('.admin-section').forEach((s) => {
-          s.style.display = 'none';
-          s.classList.remove('active');
-        });
-        if (portalSec) {
-          portalSec.style.display = 'block';
-          portalSec.classList.add('active');
+        if (window.CompanySeriousness) {
+          const mon = document.getElementById('bi-seriousness-monitor');
+          if (mon && mon.offsetParent !== null) {
+            renderAdminMonitor();
+          }
         }
-        if (monitorSec) monitorSec.style.display = 'none';
-        initPortalSection(h === 'auditor' ? 'auditor' : 'investor');
-      }, 100);
+      }, 200);
     }
   }
 
