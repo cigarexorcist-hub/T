@@ -46,15 +46,42 @@
     documentTypeNameSecondaryLang: 'معاملة موثقة'
   };
 
-  /** بيانات العرض فقط — تُمسَح عند إغلاق/تحديث الصفحة */
+  /** حالة الواجهة في التبويب الحالي */
   const sessionStore = {
-    records: [],
     attempts: MAX_ATTEMPTS,
     locked: false,
     captchaAns: 0,
     role: 'investor',
     lastAnalysis: null
   };
+
+  /** مفتاح مشترك بين تبويبات نفس المتصفح (بدون خادم) */
+  const STORAGE_KEY = 'csv_demo_records_v1';
+
+  function loadRecords() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveRecords(arr) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr || []));
+      window.dispatchEvent(new CustomEvent('csv-records-updated'));
+    } catch (_) {}
+  }
+
+  function clearRecords() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      window.dispatchEvent(new CustomEvent('csv-records-updated'));
+    } catch (_) {}
+  }
 
   function fmtMoney(n) {
     return (
@@ -666,15 +693,31 @@
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const sendBtn = document.getElementById('csv-send-admin');
     if (sendBtn) {
-      sendBtn.onclick = () => {
-        if (!sessionStore.lastAnalysis) return;
-        sessionStore.records.unshift({ ...sessionStore.lastAnalysis });
-        modal(
-          'تم الإرسال للمتابعة',
-          'ظهرت النتيجة فوراً في شاشة «متابعة إثبات الجدية» ضمن لوحة المنظومة.<br><small>البيانات مؤقتة لجلسة العرض وتُمسح عند إغلاق الصفحة.</small>',
-          '✅'
-        );
-        renderAdminMonitor();
+      sendBtn.onclick = function () {
+        if (!sessionStore.lastAnalysis) {
+          modal('لا توجد نتيجة', 'حلّل العيّنة أولاً ثم أعد الإرسال.', '⚠️');
+          return;
+        }
+        const rec = Object.assign({}, sessionStore.lastAnalysis, { id: Date.now() });
+        const list = loadRecords();
+        list.unshift(rec);
+        saveRecords(list);
+
+        const isAuditor = sessionStore.role === 'auditor';
+        const who = isAuditor ? 'السيد/ المحاسب القانوني المحترم' : 'السيد/ المستثمر المحترم';
+        const formalMsg =
+          '<div style="text-align:right;line-height:1.85;font-size:13px">' +
+          '<strong>' + who + '</strong><br><br>' +
+          'نفيدكم بأنه تم <strong>استلام عيّنة إثبات الجدية</strong> للمنشأة:<br>' +
+          '<strong style="color:#0b1f3a">' + (rec.companyName || '—') + '</strong><br>' +
+          'رقم التعريف الرسمي: <strong>' + (rec.entityId || '—') + '</strong><br><br>' +
+          'تم تسجيل النتيجة في <strong>سجل المتابعة</strong> لدى المنظومة، ويمكن الاطلاع عليها فوراً من شاشة المتابعة في تبويب الأدمن (نفس المتصفح).<br><br>' +
+          '<span style="display:inline-block;background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">تم الإرسال بنجاح</span><br><br>' +
+          '<small style="color:#64748b">محاكاة عرض · البيانات مشتركة بين تبويبات هذا المتصفح حتى الضغط على «مسح بيانات الجلسة»</small>' +
+          '</div>';
+
+        modal('تم الإرسال بنجاح', formalMsg, '📨');
+        try { renderAdminMonitor(); } catch (_) {}
       };
     }
   }
@@ -821,7 +864,7 @@
     const host = document.getElementById('bi-seriousness-monitor');
     if (!host) return;
     ensureStyles();
-    const recs = sessionStore.records;
+    const recs = loadRecords();
     const strong = recs.filter((r) => r.summary.classification === 'strong').length;
     const weak = recs.filter((r) => r.summary.classification === 'weak').length;
     const review = recs.filter((r) => r.summary.classification === 'review').length;
@@ -831,7 +874,7 @@
     <div class="csv-wrap">
       <div class="csv-hero" style="background:linear-gradient(135deg,#0b1f3a,#134e4a)">
         <h2>متابعة إثبات الجدية</h2>
-        <p>نتائج العيّنات الواردة من بوابة المستثمر / المحاسب خلال جلسة العرض الحالية — بدون تخزين دائم.</p>
+        <p>نتائج العيّنات الواردة من تبويب المستثمر أو المحاسب في نفس المتصفح — تُزامن فوراً بين التبويبات. امسحها يدوياً بعد انتهاء العرض.</p>
       </div>
       <div class="csv-admin-kpi">
         <div><div class="n">${recs.length}</div><div class="t">فحوصات الجلسة</div></div>
@@ -844,7 +887,7 @@
         <div class="sub">يُمسح تلقائياً عند إغلاق أو تحديث الصفحة</div>
         ${
           !recs.length
-            ? `<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد نتائج بعد. استخدم بوابة المستثمر أو المحاسب ثم اضغط «إرسال للمتابعة».</p>`
+            ? `<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد نتائج بعد. افتح تبويباً لبوابة المستثمر أو المحاسب، حلّل العيّنة، ثم اضغط «إرسال للمتابعة» — ستظهر هنا فوراً.</p>`
             : `<div style="overflow-x:auto"><table class="csv-table">
               <thead><tr>
                 <th>#</th><th>المنشأة</th><th>مقدّم الفحص</th><th>صالحة</th><th>المبلغ</th><th>المؤشر</th><th>الوقت</th>
@@ -914,9 +957,10 @@
     const clr = document.getElementById('csv-clear-session');
     if (clr) {
       clr.onclick = () => {
-        sessionStore.records = [];
+        clearRecords();
         sessionStore.lastAnalysis = null;
         renderAdminMonitor();
+        modal('تم المسح', 'تم مسح بيانات جلسة العرض من هذا المتصفح.', '🧹');
       };
     }
   }
@@ -953,12 +997,28 @@
     initPortal: initPortalSection,
     initMonitor: renderAdminMonitor,
     show: showSeriousnessSection,
-    getSessionRecords: () => sessionStore.records.slice(),
+    getSessionRecords: () => loadRecords().slice(),
     clearSession: () => {
-      sessionStore.records = [];
+      clearRecords();
       sessionStore.lastAnalysis = null;
     }
   };
+
+  // مزامنة بين التبويبات: عند الإرسال من المستثمر/المحاسب تتحدث شاشة الأدمن فوراً
+  window.addEventListener('storage', function (e) {
+    if (e.key === STORAGE_KEY) {
+      const mon = document.getElementById('bi-seriousness-monitor');
+      if (mon && mon.style.display !== 'none') {
+        renderAdminMonitor();
+      }
+    }
+  });
+  window.addEventListener('csv-records-updated', function () {
+    const mon = document.getElementById('bi-seriousness-monitor');
+    if (mon && mon.style.display !== 'none') {
+      renderAdminMonitor();
+    }
+  });
 
   // ========== دخول مباشر للمستثمر/المحاسب بدون تسجيل لجنة ==========
   function openPublicPortal(role) {
