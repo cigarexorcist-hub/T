@@ -366,8 +366,8 @@
       }
       .csv-lock.show { display: block; }
       .csv-modal-bg {
-        display: none; position: fixed; inset: 0; background: rgba(11,31,58,.5);
-        z-index: 9999; align-items: center; justify-content: center; padding: 16px;
+        display: none; position: fixed; inset: 0; background: rgba(11,31,58,.55);
+        z-index: 10050; align-items: center; justify-content: center; padding: 16px;
       }
       .csv-modal-bg.show { display: flex; }
       .csv-modal {
@@ -424,16 +424,21 @@
         <div id="csv-modal-icon" style="font-size:36px;margin-bottom:8px"></div>
         <h3 id="csv-modal-title" style="margin:0 0 8px;font-size:1.05rem"></h3>
         <p id="csv-modal-msg" style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 16px"></p>
-        <button class="csv-btn csv-btn-main" type="button" onclick="document.getElementById('csv-modal-bg').classList.remove('show')">حسناً</button>
+        <button class="csv-btn csv-btn-main" type="button" id="csv-modal-ok">حسناً</button>
       </div>`;
       document.body.appendChild(bg);
       bg.addEventListener('click', (e) => {
         if (e.target === bg) bg.classList.remove('show');
       });
     }
+    // دائماً في أعلى body فوق بوابة المستثمر (z-index عالي)
+    document.body.appendChild(bg);
+    bg.style.zIndex = '10050';
     document.getElementById('csv-modal-icon').textContent = icon || '⚠️';
     document.getElementById('csv-modal-title').textContent = title;
     document.getElementById('csv-modal-msg').innerHTML = msg;
+    const ok = document.getElementById('csv-modal-ok');
+    if (ok) ok.onclick = function () { bg.classList.remove('show'); };
     bg.classList.add('show');
   }
 
