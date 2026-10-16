@@ -1880,49 +1880,31 @@ input.bg-success {
     .badge-licensed { background: #dff9fb; color: #0984e3; }
     .badge-pending { background: #fff5f5; color: #e84118; }
     
-    /* زر إغلاق لوحة التحكم — مثبت على جانب الشاشة */
+    /* زر إغلاق لوحة التحكم — داخل الشريط الجانبي تحت إعدادات النظام */
     .btn-close-admin {
-        position: fixed;
-        top: 50%;
-        left: 0;
-        transform: translateY(-50%);
+        display: block;
+        width: calc(100% - 30px);
+        margin: 20px 15px 10px;
         background: linear-gradient(180deg, #b91c1c, #991b1b);
         color: white;
         border: none;
-        border-radius: 0 14px 14px 0;
-        padding: 18px 12px;
+        border-radius: 10px;
+        padding: 14px 20px;
         cursor: pointer;
-        z-index: 100001;
-        writing-mode: vertical-rl;
-        text-orientation: mixed;
         font-weight: 800;
-        font-size: 13px;
-        letter-spacing: 0.5px;
-        box-shadow: 4px 0 18px rgba(185, 28, 28, 0.35);
-        transition: background .2s, padding .2s, box-shadow .2s;
-        display: flex;
-        align-items: center;
-        gap: 8px;
+        font-size: 14px;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(185, 28, 28, 0.3);
+        transition: background .2s, transform .2s, box-shadow .2s;
     }
     .btn-close-admin i {
-        writing-mode: horizontal-tb;
+        margin-left: 8px;
         font-size: 14px;
     }
     .btn-close-admin:hover {
         background: linear-gradient(180deg, #dc2626, #b91c1c);
-        padding-left: 16px;
-        box-shadow: 6px 0 22px rgba(220, 38, 38, 0.45);
-    }
-    @media (max-width: 768px) {
-        .btn-close-admin {
-            top: auto;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            writing-mode: horizontal-tb;
-            border-radius: 999px;
-            padding: 12px 20px;
-        }
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(220, 38, 38, 0.4);
     }
 
 
@@ -2188,12 +2170,6 @@ input.bg-success {
     </head>
 <body>
 <div id="adminDashboardBI" class="admin-dashboard-wrapper">
-    <!-- زر إغلاق لوحة التحكم — جانب الشاشة -->
-    <button type="button" class="btn-close-admin" onclick="closeAdminBI()" title="إغلاق لوحة التحكم">
-        <i class="fas fa-times"></i>
-        <span>إغلاق لوحة التحكم</span>
-    </button>
-    
     <!-- الزر الجديد: يظهر فقط في الموبايل (d-md-none) لفتح القائمة الجانبية (يمين) -->
     <button id="mobileMenuBtn" class="btn btn-primary d-md-none" onclick="toggleAdminSidebar()" style="position: fixed; top: 20px; right: 20px; z-index: 100000; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
         <i class="fas fa-bars"></i> القائمة
@@ -2213,6 +2189,10 @@ input.bg-success {
         <a href="#" class="sidebar-link" onclick="showAdminSection('bi-companies-map', this)"><i class="fas fa-map-marked-alt"></i> خريطة الشركات</a>
         <a href="#" class="sidebar-link" data-csv-nav="monitor" onclick="showAdminSection('bi-seriousness-monitor', this); if(window.CompanySeriousness) CompanySeriousness.initMonitor(); return false;"><i class="fas fa-clipboard-check"></i> متابعة إثبات الجدية</a>
         <a href="#" class="sidebar-link" onclick="showAdminSection('bi-settings', this)"><i class="fas fa-cog"></i> إعدادات النظام</a>
+        <button type="button" class="btn-close-admin" onclick="closeAdminBI()" title="إغلاق لوحة التحكم">
+            <i class="fas fa-times"></i>
+            إغلاق لوحة التحكم
+        </button>
     </div>
     
     <div class="admin-main">
