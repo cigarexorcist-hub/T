@@ -114,6 +114,49 @@
     return p.join('-');
   }
 
+  function formatAddress(addr) {
+    if (!addr || typeof addr !== 'object') return '—';
+    const parts = [
+      addr.street,
+      addr.buildingNumber ? ('مبنى ' + addr.buildingNumber) : '',
+      addr.floor ? ('دور ' + addr.floor) : '',
+      addr.regionCity,
+      addr.governate,
+      addr.postalCode && String(addr.postalCode).trim() ? String(addr.postalCode).trim() : '',
+      addr.country
+    ].filter(Boolean);
+    return parts.length ? parts.join('، ') : '—';
+  }
+
+  function itemLinesHtml(d) {
+    const lines = (d && d.invoiceLines) || [];
+    if (!lines.length) {
+      return '<div style="font-size:12px;color:#64748b;margin-top:6px">لا توجد أصناف مسجّلة</div>';
+    }
+    return (
+      '<div style="margin-top:8px;font-size:12px">' +
+      '<div style="font-weight:700;color:#64748b;margin-bottom:4px">الأصناف (اسم الكود)</div>' +
+      lines.map(function (ln) {
+        const codeName = ln.itemPrimaryName || ln.itemSecondaryName || ln.itemCode || '—';
+        const desc = ln.description || ln.itemPrimaryDescription || ln.itemSecondaryDescription || '';
+        const qty = ln.quantity != null ? ln.quantity : '';
+        const amt = ln.salesTotal != null ? fmtMoney(ln.salesTotal) : '';
+        return (
+          '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin-bottom:4px">' +
+          '<strong>' + codeName + '</strong>' +
+          (ln.itemCode ? ' <span style="color:#64748b;font-size:11px">(' + ln.itemCode + ')</span>' : '') +
+          (desc ? '<div style="color:#475569;margin-top:2px">' + desc + '</div>' : '') +
+          '<div style="margin-top:2px;color:#64748b">' +
+          (qty !== '' ? 'الكمية: ' + qty : '') +
+          (qty !== '' && amt ? ' · ' : '') +
+          (amt ? 'المبلغ: ' + amt : '') +
+          '</div></div>'
+        );
+      }).join('') +
+      '</div>'
+    );
+  }
+
   function bindGroupedInput(input, maxDigits, formatter) {
     if (!input) return;
     input.addEventListener('input', function () {
@@ -856,12 +899,26 @@
       refreshCaptcha();
       return;
     }
+    const companyNameReq = ((document.getElementById('csv-company-name') || {}).value || '').trim();
+    if (!companyNameReq) {
+      modal('اسم المنشأة مطلوب', 'أدخل اسم الشركة / المنشأة قبل تحليل العيّنة.', '🏢');
+      return;
+    }
     const entityId = (document.getElementById('csv-entity-id') || {}).value || '';
     if (!entityId.trim()) {
       modal(
-        'رقم المنشأة مطلوب',
-        'أدخل رقم التعريف الرسمي للمنشأة محل الفحص — هذا أساس مطابقة العيّنة.',
+        'رقم التعريف مطلوب',
+        'أدخل رقم التعريف / البطاقة الضريبية للمنشأة — أساس مطابقة العيّنة.',
         '🔢'
+      );
+      return;
+    }
+    const crReq = digitsOnly((document.getElementById('csv-cr-number') || {}).value || '');
+    if (crReq.length !== 15) {
+      modal(
+        'السجل التجاري مطلوب',
+        'أدخل رقم السجل التجاري الموحد كاملاً (15 رقماً) على ثلاث مجموعات.',
+        '📋'
       );
       return;
     }
@@ -909,19 +966,14 @@
     }
 
     const summary = analyzeResults(entityId.trim(), results);
-    const companyName =
-      ((document.getElementById('csv-company-name') || {}).value || '').trim() ||
-      summary.names[0] ||
-      '—';
-
-    const crRaw = digitsOnly((document.getElementById('csv-cr-number') || {}).value || '');
-    const taxCardRaw = digitsOnly((document.getElementById('csv-tax-card') || {}).value || '');
+    const companyName = companyNameReq;
+    const crRaw = crReq;
     sessionStore.lastAnalysis = {
       id: Date.now(),
       entityId: entityId.trim(),
       companyName,
       crNumber: crRaw,
-      taxCard: taxCardRaw,
+      taxCard: entityId.trim(),
       role: sessionStore.role,
       results,
       summary,
@@ -973,9 +1025,10 @@
                 </div>
               </div>
               <div class="csv-grid">
-                <div><span class="k">الطرف المصدر</span><br><span class="v">${d.issuer?.name || '—'}</span><br><small style="color:#64748b">${d.issuer?.id || ''}</small></div>
-                <div><span class="k">الطرف المستلم</span><br><span class="v">${d.receiver?.name || '—'}</span><br><small style="color:#64748b">${d.receiver?.id || ''}</small></div>
+                <div><span class="k">الطرف المصدر</span><br><span class="v">${d.issuer?.name || '—'}</span><br><small style="color:#64748b">${d.issuer?.id || ''}</small><br><small style="color:#64748b;line-height:1.4">${formatAddress(d.issuer?.address)}</small></div>
+                <div><span class="k">الطرف المستلم</span><br><span class="v">${d.receiver?.name || '—'}</span><br><small style="color:#64748b">${d.receiver?.id || ''}</small><br><small style="color:#64748b;line-height:1.4">${formatAddress(d.receiver?.address)}</small></div>
               </div>
+              ${itemLinesHtml(d)}
               <div style="margin-top:10px;font-weight:800;font-size:1.05rem">${fmtMoney(d.totalAmount)}</div>
             </div>`;
           })
@@ -1048,20 +1101,16 @@
         <h3>① بيانات المنشأة محل الفحص</h3>
         <div class="sub">أدخل بيانات المنشأة الرسمية — أساس مطابقة العيّنة</div>
         <div class="csv-field">
-          <label>اسم المنشأة/الشركة</label>
+          <label>اسم المنشأة / الشركة <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
         </div>
         <div class="csv-field">
-          <label>رقم البطاقة الضريبية للمنشأة/الشركة <span style="color:#dc2626">*</span></label>
+          <label>رقم التعريف / البطاقة الضريبية <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
         </div>
         <div class="csv-field">
-          <label>رقم السجل التجاري الموحد <span style="color:#64748b;font-weight:400">(15 رقم· )</span></label>
-          <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
-        </div>
-        <div class="csv-field">
-          <label>رقم البطاقة الضريبية <span style="color:#64748b;font-weight:400">(9 أرقام · ثلاث مجموعات)</span></label>
-          <input type="text" id="csv-tax-card" placeholder="123-456-789" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
+          <label>رقم السجل التجاري الموحد <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(15 رقم · ثلاث مجموعات)</span></label>
+          <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" value="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field" id="csv-auditor-extra" style="display:${isAuditor ? 'block' : 'none'}">
           <label>مرجع مهني للمحاسب (اختياري في المحاكاة)</label>
@@ -1166,7 +1215,6 @@
     buildLinkRows('csv-links-in', 'in');
     buildLinkRows('csv-links-out', 'out');
     bindGroupedInput(document.getElementById('csv-cr-number'), 15, formatCR);
-    bindGroupedInput(document.getElementById('csv-tax-card'), 9, formatTaxCard);
     refreshCaptcha();
     updateAttemptsUI();
     setRole(sessionStore.role);
@@ -1461,11 +1509,20 @@
                 '<div class="csv-grid">' +
                 '<div><span class="k">المصدر</span><br><span class="v">' +
                 ((d.issuer && d.issuer.name) || '—') +
-                '</span></div>' +
+                '</span><br><small style="color:#64748b">' +
+                ((d.issuer && d.issuer.id) || '') +
+                '</small><br><small style="color:#64748b;line-height:1.4">' +
+                formatAddress(d.issuer && d.issuer.address) +
+                '</small></div>' +
                 '<div><span class="k">المستلم</span><br><span class="v">' +
                 ((d.receiver && d.receiver.name) || '—') +
-                '</span></div>' +
+                '</span><br><small style="color:#64748b">' +
+                ((d.receiver && d.receiver.id) || '') +
+                '</small><br><small style="color:#64748b;line-height:1.4">' +
+                formatAddress(d.receiver && d.receiver.address) +
+                '</small></div>' +
                 '</div>' +
+                itemLinesHtml(d) +
                 '<div style="margin-top:8px;font-weight:800">' +
                 fmtMoney(d.totalAmount) +
                 '</div></div>'
