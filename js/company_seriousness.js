@@ -1,7 +1,7 @@
 /**
  * إثبات جدية الشركة — Company Seriousness Verification
- * محاكاة عرض لمتخذ القرار · بيانات الجلسة فقط (بدون تخزين دائم)
- * مصدر العيّنة: روابط المشاركة العامة للمعاملات الموثقة رسمياً
+ * استخلاص حي من واجهة المشاركة العامة لمنظومة الفواتير الإلكترونية
+ * لا توجد بيانات محاكاة للفواتير — النتيجة من API الهيئة فقط
  */
 (function () {
   'use strict';
@@ -9,46 +9,9 @@
   const ETA_ORIGIN = 'https://invoicing.eta.gov.eg';
   const ETA_PATH_RE = /^https:\/\/invoicing\.eta\.gov\.eg\/documents\/([A-Z0-9]+)\/share\/([A-Za-z0-9]+)/i;
   const MAX_ATTEMPTS = 5;
-  const DEMO_LINK =
+  /** رابط مشاركة حقيقي للاختبار السريع فقط — يُجلب من API الحي وليس من بيانات ثابتة */
+  const SAMPLE_LIVE_LINK =
     'https://invoicing.eta.gov.eg/documents/J1AGP49BP71M16RA90HPTJ4M10/share/CSC30PT8RBW7S1EJA0HPTJ4M10h8Koty1791633343';
-
-  const DEMO_PAYLOAD = {
-    uuid: 'J1AGP49BP71M16RA90HPTJ4M10',
-    status: 'Valid',
-    dateTimeIssued: '2026-10-10T11:55:20Z',
-    internalID: '288',
-    taxpayerActivityCode: '4610',
-    totalAmount: 24420,
-    netAmount: 22000,
-    totalSales: 22000,
-    taxTotals: [
-      { taxType: 'T1', amount: 3080 },
-      { taxType: 'T4', amount: 660 }
-    ],
-    issuer: {
-      id: '483893145',
-      name: 'جا اف سى كونسولتانت ال ال سى',
-      address: { governate: 'Cairo', regionCity: 'El Basatin' }
-    },
-    receiver: {
-      id: '630615349',
-      name: 'هاي ام سولونيك',
-      address: { governate: 'Cairo', regionCity: 'New Cairo 1' }
-    },
-    invoiceLines: [
-      {
-        description: 'Car rental Fees from 26-09-2026 to 25-10-2026 King Long ن م د 391',
-        itemCode: 'EG-483893145-CR',
-        itemPrimaryName: 'car rental',
-        itemSecondaryName: 'تأجير سيارة',
-        itemPrimaryDescription: 'car rental',
-        itemSecondaryDescription: 'تأجير سيارة',
-        quantity: 1,
-        salesTotal: 22000
-      }
-    ],
-    documentTypeNameSecondaryLang: 'معاملة موثقة'
-  };
 
   /** حالة الواجهة في التبويب الحالي */
   const sessionStore = {
@@ -481,50 +444,6 @@
     return { uuid: m[1], token: m[2] };
   }
 
-  function synthesizeFromUuid(uuid) {
-    const hash = uuid.split('').reduce((s, c) => s + c.charCodeAt(0), 0);
-    const taxA = String(100000000 + (hash % 800000000));
-    const taxB = String(100000000 + ((hash * 7) % 800000000));
-    const amount = 5000 + (hash % 200) * 100;
-    return {
-      uuid,
-      status: hash % 9 === 0 ? 'Invalid' : 'Valid',
-      dateTimeIssued:
-        '2026-0' +
-        (1 + (hash % 9)) +
-        '-' +
-        String(10 + (hash % 18)).padStart(2, '0') +
-        'T10:00:00Z',
-      internalID: String(100 + (hash % 900)),
-      taxpayerActivityCode: String(4600 + (hash % 50)),
-      totalAmount: amount * 1.14,
-      netAmount: amount,
-      totalSales: amount,
-      taxTotals: [{ taxType: 'T1', amount: +(amount * 0.14).toFixed(2) }],
-      issuer: {
-        id: taxA,
-        name: 'منشأة ' + uuid.slice(0, 4),
-        address: { governate: 'Cairo', regionCity: '—' }
-      },
-      receiver: {
-        id: taxB,
-        name: 'طرف مقابل ' + uuid.slice(4, 8),
-        address: { governate: 'Giza', regionCity: '—' }
-      },
-      invoiceLines: [
-        {
-          description: 'بند معاملة تجريبي',
-          itemCode: 'EG-' + taxA + '-ITM',
-          itemPrimaryName: 'Demo item',
-          itemSecondaryName: 'صنف تجريبي',
-          quantity: 1,
-          salesTotal: amount
-        }
-      ],
-      documentTypeNameSecondaryLang: 'معاملة موثقة'
-    };
-  }
-
   function ensureInvoiceLinesOnData(data) {
     if (!data || typeof data !== 'object') return data;
     const lines = normalizeInvoiceLines(data);
@@ -532,35 +451,96 @@
     return data;
   }
 
+  /**
+   * استخلاص حي فقط من واجهة المشاركة العامة للهيئة.
+   * لا توجد بيانات محاكاة — عند الفشل يُرجع خطأ واضح للمستخدم.
+   */
   async function fetchDocument(url) {
     const parts = parseShareUrl(url);
-    if (!parts) throw new Error('INVALID_URL');
+    if (!parts) {
+      const err = new Error('INVALID_URL');
+      err.code = 'INVALID_URL';
+      throw err;
+    }
 
-    const api = `https://api-portal.invoicing.eta.gov.eg/api/v1/public/documents/${parts.uuid}/share?token=${parts.token}&documentLinesLimit=100`;
+    const api =
+      'https://api-portal.invoicing.eta.gov.eg/api/v1/public/documents/' +
+      encodeURIComponent(parts.uuid) +
+      '/share?token=' +
+      encodeURIComponent(parts.token) +
+      '&documentLinesLimit=100';
+
+    let res;
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(api, {
+      const timer = setTimeout(function () {
+        ctrl.abort();
+      }, 15000);
+      res = await fetch(api, {
         signal: ctrl.signal,
-        headers: { Accept: 'application/json' }
+        headers: { Accept: 'application/json' },
+        mode: 'cors',
+        cache: 'no-store'
       });
       clearTimeout(timer);
-      if (res.ok) {
-        const data = ensureInvoiceLinesOnData(await res.json());
-        return { source: 'live', data, url };
-      }
-    } catch (_) {
-      /* CORS / offline → fallback */
+    } catch (e) {
+      const err = new Error('NETWORK');
+      err.code = e && e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
+      err.cause = e;
+      throw err;
     }
 
-    if (parts.uuid === DEMO_PAYLOAD.uuid || url === DEMO_LINK) {
-      return { source: 'demo', data: ensureInvoiceLinesOnData({ ...DEMO_PAYLOAD }), url };
+    if (res.status === 404) {
+      const err = new Error('NOT_FOUND');
+      err.code = 'NOT_FOUND';
+      throw err;
     }
-    return {
-      source: 'demo',
-      data: ensureInvoiceLinesOnData(synthesizeFromUuid(parts.uuid)),
-      url
-    };
+    if (!res.ok) {
+      const err = new Error('HTTP_' + res.status);
+      err.code = 'HTTP';
+      err.status = res.status;
+      throw err;
+    }
+
+    let raw;
+    try {
+      raw = await res.json();
+    } catch (_) {
+      const err = new Error('BAD_JSON');
+      err.code = 'BAD_JSON';
+      throw err;
+    }
+
+    if (!raw || typeof raw !== 'object') {
+      const err = new Error('EMPTY');
+      err.code = 'EMPTY';
+      throw err;
+    }
+
+    const data = ensureInvoiceLinesOnData(raw);
+    return { source: 'live', data: data, url: url };
+  }
+
+  function explainFetchError(code) {
+    if (code === 'INVALID_URL') {
+      return 'صيغة رابط المشاركة غير صحيحة.';
+    }
+    if (code === 'NOT_FOUND') {
+      return 'الفاتورة غير موجودة أو انتهت صلاحية رابط المشاركة.';
+    }
+    if (code === 'TIMEOUT') {
+      return 'انتهت مهلة الاتصال بواجهة الهيئة. أعد المحاولة.';
+    }
+    if (code === 'NETWORK') {
+      return 'تعذّر الاتصال بواجهة الفواتير الإلكترونية. تحقق من الإنترنت أو أعد المحاولة لاحقاً.';
+    }
+    if (code === 'HTTP') {
+      return 'واجهة الهيئة رفضت الطلب مؤقتاً. أعد المحاولة بعد لحظات.';
+    }
+    if (code === 'BAD_JSON' || code === 'EMPTY') {
+      return 'استجابة غير متوقعة من واجهة الهيئة.';
+    }
+    return 'تعذّر استخلاص بيانات الفاتورة من الرابط.';
   }
 
   function analyzeResults(targetId, items) {
@@ -1083,12 +1063,15 @@
     return { inbound, outbound };
   }
 
-  function fillDemo(type) {
-    const inputs = [...document.querySelectorAll(`input[data-csv-type="${type}"]`)];
-    const empty = inputs.find((i) => !i.value.trim());
+  /** يضع رابط مشاركة حقيقي في الحقل فقط — الاستخلاص يتم لاحقاً من API الحي */
+  function fillSampleLink(type) {
+    const inputs = [...document.querySelectorAll('input[data-csv-type="' + type + '"]')];
+    const empty = inputs.find(function (i) {
+      return !i.value.trim();
+    });
     const target = empty || inputs[0];
     if (!target) return;
-    target.value = DEMO_LINK;
+    target.value = SAMPLE_LIVE_LINK;
     target.dispatchEvent(new Event('blur'));
   }
 
@@ -1170,8 +1153,14 @@
           source: fetched.source,
           data: fetched.data
         });
-      } catch {
-        results.push({ ok: false, side: item.side, url: item.url });
+      } catch (e) {
+        results.push({
+          ok: false,
+          side: item.side,
+          url: item.url,
+          errorCode: (e && e.code) || 'UNKNOWN',
+          errorMsg: explainFetchError((e && e.code) || 'UNKNOWN')
+        });
       }
     }
 
@@ -1217,7 +1206,10 @@
         ${analysis.results
           .map((r, i) => {
             if (!r.ok) {
-              return `<div class="csv-inv"><div class="hd"><strong>معاملة ${i + 1} — ${r.side}</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div></div>`;
+              return `<div class="csv-inv"><div class="hd"><strong>معاملة ${i + 1} — ${r.side}</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>
+                <div style="font-size:12px;color:#b91c1c;margin-top:6px;line-height:1.5">${r.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.'}</div>
+                <div style="font-size:11px;color:#64748b;margin-top:4px;direction:ltr;word-break:break-all">${r.url || ''}</div>
+              </div>`;
             }
             const d = r.data;
             const match =
@@ -1317,18 +1309,18 @@
         <div class="sub">أدخل بيانات المنشأة/الشركة  طبقا للسجل التجاري </div>
         <div class="csv-field">
           <label>اسم المنشأة / الشركة <span style="color:#dc2626">*</span></label>
-          <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
+          <input type="text" id="csv-company-name" placeholder="اسم المنشأة كما في السجل التجاري" value="">
         </div>
         <div class="csv-field">
           <label>رقم التعريف / البطاقة الضريبية <span style="color:#dc2626">*</span></label>
-          <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
+          <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="" maxlength="15" inputmode="numeric">
         </div>
         <div class="csv-field">
           <label>رقم السجل التجاري الموحد <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(15 رقم)</span></label>
-          <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" value="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
+          <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" value="" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field" id="csv-auditor-extra" style="display:${isAuditor ? 'block' : 'none'}">
-          <label>مرجع مهني للمحاسب (اختياري في المحاكاة)</label>
+          <label>مرجع مهني للمحاسب (اختياري)</label>
           <input type="text" id="csv-auditor-ref" placeholder="رقم قيد / مرجع">
         </div>
       </div>
@@ -1371,12 +1363,12 @@
           <div class="csv-linkbox">
             <h4><span class="csv-tag in">مشتريات</span> معاملات واردة</h4>
             <div id="csv-links-in"></div>
-            <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in">＋ رابط تجريبي</button>
+            <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
           <div class="csv-linkbox">
             <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة</h4>
             <div id="csv-links-out"></div>
-            <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out">＋ رابط تجريبي</button>
+            <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
         </div>
         <div class="csv-cap">
@@ -1418,8 +1410,10 @@
         );
       });
     });
-    root.querySelectorAll('[data-demo]').forEach((btn) => {
-      btn.addEventListener('click', () => fillDemo(btn.getAttribute('data-demo')));
+    root.querySelectorAll('[data-demo]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        fillSampleLink(btn.getAttribute('data-demo'));
+      });
     });
     const analyze = root.querySelector('#csv-analyze-btn');
     if (analyze) analyze.addEventListener('click', runAnalysis);
@@ -1767,6 +1761,9 @@
                   '<div class="csv-inv"><strong>فاتورة ' +
                   (i + 1) +
                   '</strong> · <span class="csv-st csv-st-wa">تعذّر الاستخلاص</span>' +
+                  '<div style="font-size:12px;color:#b91c1c;margin-top:4px">' +
+                  (inv.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.') +
+                  '</div>' +
                   '<div style="font-size:11px;color:#64748b;margin-top:4px">مصدر الفحص: ' +
                   (rec.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر') +
                   ' · ' +
