@@ -89,6 +89,67 @@
     );
   }
 
+  /** أرقام فقط */
+  function digitsOnly(v) {
+    return String(v || '').replace(/\D/g, '');
+  }
+
+  /** سجل تجاري موحد 15 رقم → 5-5-5 */
+  function formatCR(v) {
+    const d = digitsOnly(v).slice(0, 15);
+    const p = [];
+    if (d.length > 0) p.push(d.slice(0, 5));
+    if (d.length > 5) p.push(d.slice(5, 10));
+    if (d.length > 10) p.push(d.slice(10, 15));
+    return p.join('-');
+  }
+
+  /** بطاقة ضريبية 9 أرقام → 3-3-3 */
+  function formatTaxCard(v) {
+    const d = digitsOnly(v).slice(0, 9);
+    const p = [];
+    if (d.length > 0) p.push(d.slice(0, 3));
+    if (d.length > 3) p.push(d.slice(3, 6));
+    if (d.length > 6) p.push(d.slice(6, 9));
+    return p.join('-');
+  }
+
+  function bindGroupedInput(input, maxDigits, formatter) {
+    if (!input) return;
+    input.addEventListener('input', function () {
+      const d = digitsOnly(input.value).slice(0, maxDigits);
+      const start = input.selectionStart;
+      input.value = formatter(d);
+      // تقريب بسيط لمؤشر الكتابة
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+    });
+    input.addEventListener('paste', function (e) {
+      e.preventDefault();
+      const t = (e.clipboardData || window.clipboardData).getData('text');
+      input.value = formatter(digitsOnly(t).slice(0, maxDigits));
+    });
+    input.addEventListener('keypress', function (e) {
+      if (e.ctrlKey || e.metaKey || e.key === 'Backspace' || e.key === 'Tab') return;
+      if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+  }
+
+  function effectiveClass(rec) {
+    return rec.adminClass || (rec.summary && rec.summary.classification) || 'review';
+  }
+
+  function classLabel(c) {
+    if (c === 'strong') return 'جادة';
+    if (c === 'weak') return 'غير جادة';
+    return 'تحتاج مراجعة';
+  }
+
+  function classPill(c) {
+    if (c === 'strong') return 'csv-pill-s';
+    if (c === 'weak') return 'csv-pill-w';
+    return 'csv-pill-r';
+  }
+
   function isValidEtaLink(url) {
     try {
       const u = new URL(url);
@@ -625,13 +686,18 @@
       summary.names[0] ||
       '—';
 
+    const crRaw = digitsOnly((document.getElementById('csv-cr-number') || {}).value || '');
+    const taxCardRaw = digitsOnly((document.getElementById('csv-tax-card') || {}).value || '');
     sessionStore.lastAnalysis = {
       id: Date.now(),
       entityId: entityId.trim(),
       companyName,
+      crNumber: crRaw,
+      taxCard: taxCardRaw,
       role: sessionStore.role,
       results,
       summary,
+      adminClass: null,
       at: new Date().toISOString()
     };
 
@@ -715,7 +781,10 @@
           '<strong>' + who + '</strong><br><br>' +
           'نفيدكم بأنه تم <strong>استلام عيّنة إثبات الجدية</strong> للمنشأة:<br>' +
           '<strong style="color:#0b1f3a">' + (rec.companyName || '—') + '</strong><br>' +
-          'رقم التعريف الرسمي: <strong>' + (rec.entityId || '—') + '</strong><br><br>' +
+          'رقم التعريف الرسمي: <strong>' + (rec.entityId || '—') + '</strong><br>' +
+          (rec.crNumber ? ('السجل التجاري الموحد: <strong dir="ltr">' + formatCR(rec.crNumber) + '</strong><br>') : '') +
+          (rec.taxCard ? ('البطاقة الضريبية: <strong dir="ltr">' + formatTaxCard(rec.taxCard) + '</strong><br>') : '') +
+          '<br>' +
           'تم تسجيل النتيجة في <strong>سجل المتابعة</strong> لدى المنظومة، ويمكن الاطلاع عليها فوراً من شاشة المتابعة في تبويب الأدمن (نفس المتصفح).<br><br>' +
           '<span style="display:inline-block;background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">تم الإرسال بنجاح</span><br><br>' +
           '<small style="color:#64748b">محاكاة عرض · البيانات مشتركة بين تبويبات هذا المتصفح حتى الضغط على «مسح بيانات الجلسة»</small>' +
@@ -749,14 +818,22 @@
 
       <div class="csv-card">
         <h3>① بيانات المنشأة محل الفحص</h3>
-        <div class="sub">أدخل رقم التعريف الرسمي للمنشأة — أساس مطابقة العيّنة</div>
+        <div class="sub">أدخل بيانات المنشأة الرسمية — أساس مطابقة العيّنة</div>
+        <div class="csv-field">
+          <label>اسم المنشأة</label>
+          <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
+        </div>
         <div class="csv-field">
           <label>رقم التعريف الرسمي للمنشأة <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
         </div>
         <div class="csv-field">
-          <label>اسم المنشأة (اختياري — يُستكمل من العيّنة)</label>
-          <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
+          <label>رقم السجل التجاري الموحد <span style="color:#64748b;font-weight:400">(15 رقم · ثلاث مجموعات)</span></label>
+          <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
+        </div>
+        <div class="csv-field">
+          <label>رقم البطاقة الضريبية <span style="color:#64748b;font-weight:400">(9 أرقام · ثلاث مجموعات)</span></label>
+          <input type="text" id="csv-tax-card" placeholder="123-456-789" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field" id="csv-auditor-extra" style="display:${isAuditor ? 'block' : 'none'}">
           <label>مرجع مهني للمحاسب (اختياري في المحاكاة)</label>
@@ -860,114 +937,233 @@
 
     buildLinkRows('csv-links-in', 'in');
     buildLinkRows('csv-links-out', 'out');
+    bindGroupedInput(document.getElementById('csv-cr-number'), 15, formatCR);
+    bindGroupedInput(document.getElementById('csv-tax-card'), 9, formatTaxCard);
     refreshCaptcha();
     updateAttemptsUI();
     setRole(sessionStore.role);
   }
 
-  function renderAdminMonitor() {
+  function renderAdminMonitor(filterText) {
     const host = document.getElementById('bi-seriousness-monitor');
     if (!host) return;
     ensureStyles();
-    const recs = loadRecords();
-    const strong = recs.filter((r) => r.summary.classification === 'strong').length;
-    const weak = recs.filter((r) => r.summary.classification === 'weak').length;
-    const review = recs.filter((r) => r.summary.classification === 'review').length;
-    const totalAmt = recs.reduce((s, r) => s + (r.summary.totalAmount || 0), 0);
+    const all = loadRecords();
+    const q = (filterText != null
+      ? filterText
+      : (document.getElementById('csv-admin-search') || {}).value || ''
+    ).trim().toLowerCase();
 
-    host.innerHTML = `
-    <div class="csv-wrap">
-      <div class="csv-hero" style="background:linear-gradient(135deg,#0b1f3a,#134e4a)">
-        <h2>متابعة إثبات الجدية</h2>
-        <p>نتائج العيّنات الواردة من تبويب المستثمر أو المحاسب في نفس المتصفح — تُزامن فوراً بين التبويبات. امسحها يدوياً بعد انتهاء العرض.</p>
-      </div>
-      <div class="csv-admin-kpi">
-        <div><div class="n">${recs.length}</div><div class="t">فحوصات الجلسة</div></div>
-        <div><div class="n" style="color:#059669">${strong}</div><div class="t">مؤشرات إيجابية</div></div>
-        <div><div class="n" style="color:#dc2626">${weak}</div><div class="t">ضعف / عدم اتساق</div></div>
-        <div><div class="n" style="color:#b45309">${fmtMoney(totalAmt)}</div><div class="t">مجموع مبالغ العيّنات</div></div>
-      </div>
-      <div class="csv-card">
-        <h3>سجل الجلسة</h3>
-        <div class="sub">يُمسح تلقائياً عند إغلاق أو تحديث الصفحة</div>
-        ${
-          !recs.length
-            ? `<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد نتائج بعد. افتح تبويباً لبوابة المستثمر أو المحاسب، حلّل العيّنة، ثم اضغط «إرسال للمتابعة» — ستظهر هنا فوراً.</p>`
-            : `<div style="overflow-x:auto"><table class="csv-table">
-              <thead><tr>
-                <th>#</th><th>المنشأة</th><th>مقدّم الفحص</th><th>صالحة</th><th>المبلغ</th><th>المؤشر</th><th>الوقت</th>
-              </tr></thead>
-              <tbody>
-                ${recs
-                  .map((r, i) => {
-                    const pill =
-                      r.summary.classification === 'strong'
-                        ? 'csv-pill-s'
-                        : r.summary.classification === 'weak'
-                          ? 'csv-pill-w'
-                          : 'csv-pill-r';
-                    return `<tr>
-                      <td>${recs.length - i}</td>
-                      <td><strong>${r.companyName}</strong><br><small style="color:#64748b">${r.entityId}</small></td>
-                      <td>${r.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر'}</td>
-                      <td>${r.summary.validCount}/${r.summary.okCount}</td>
-                      <td>${fmtMoney(r.summary.totalAmount)}</td>
-                      <td><span class="csv-pill ${pill}">${r.summary.label}</span></td>
-                      <td>${new Date(r.at).toLocaleString('ar-EG')}</td>
-                    </tr>`;
-                  })
-                  .join('')}
-              </tbody>
-            </table></div>`
-        }
-        <div class="csv-actions" style="margin-top:12px">
-          <button type="button" class="csv-btn csv-btn-soft" id="csv-clear-session">مسح بيانات الجلسة الآن</button>
-        </div>
-      </div>
-      <div class="csv-card">
-        <h3>تصنيف سريع</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div>
-            <h4 style="font-size:13px;color:#059669;margin:0 0 8px">مؤشرات إيجابية (${strong})</h4>
-            ${
-              recs.filter((r) => r.summary.classification === 'strong').length
-                ? recs
-                    .filter((r) => r.summary.classification === 'strong')
-                    .map(
-                      (r) =>
-                        `<div class="csv-inv" style="padding:10px"><strong>${r.companyName}</strong><div style="font-size:12px;color:#64748b">${r.entityId} · ${fmtMoney(r.summary.totalAmount)}</div></div>`
-                    )
-                    .join('')
-                : '<p style="font-size:12px;color:#64748b">لا يوجد</p>'
-            }
-          </div>
-          <div>
-            <h4 style="font-size:13px;color:#dc2626;margin:0 0 8px">ضعف / استكمال (${weak + review})</h4>
-            ${
-              recs.filter((r) => r.summary.classification !== 'strong').length
-                ? recs
-                    .filter((r) => r.summary.classification !== 'strong')
-                    .map(
-                      (r) =>
-                        `<div class="csv-inv" style="padding:10px"><strong>${r.companyName}</strong><div style="font-size:12px;color:#64748b">${r.summary.label}</div></div>`
-                    )
-                    .join('')
-                : '<p style="font-size:12px;color:#64748b">لا يوجد</p>'
-            }
-          </div>
-        </div>
-      </div>
-    </div>`;
+    const recs = !q
+      ? all
+      : all.filter(function (r) {
+          const hay = [
+            r.companyName,
+            r.entityId,
+            r.crNumber,
+            r.taxCard,
+            r.summary && r.summary.label,
+            r.adminClass,
+            r.role
+          ]
+            .join(' ')
+            .toLowerCase();
+          return hay.indexOf(q) !== -1;
+        });
+
+    const strong = all.filter(function (r) { return effectiveClass(r) === 'strong'; }).length;
+    const weak = all.filter(function (r) { return effectiveClass(r) === 'weak'; }).length;
+    const review = all.filter(function (r) { return effectiveClass(r) === 'review'; }).length;
+    const totalAmt = all.reduce(function (s, r) { return s + ((r.summary && r.summary.totalAmount) || 0); }, 0);
+
+    host.innerHTML =
+      '<div class="csv-wrap">' +
+      '<div class="csv-hero" style="background:linear-gradient(135deg,#0b1f3a,#134e4a)">' +
+      '<h2>متابعة إثبات الجدية</h2>' +
+      '<p>نتائج العيّنات من تبويب المستثمر أو المحاسب في نفس المتصفح — مع بحث وتصنيف يدوي وتفاصيل كل منشأة.</p>' +
+      '</div>' +
+      '<div class="csv-admin-kpi">' +
+      '<div><div class="n">' + all.length + '</div><div class="t">عدد الشركات / الفحوصات</div></div>' +
+      '<div><div class="n" style="color:#059669">' + strong + '</div><div class="t">جادة</div></div>' +
+      '<div><div class="n" style="color:#dc2626">' + weak + '</div><div class="t">غير جادة</div></div>' +
+      '<div><div class="n" style="color:#b45309">' + review + '</div><div class="t">تحتاج مراجعة</div></div>' +
+      '</div>' +
+      '<div class="csv-card">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+      '<div style="flex:1;min-width:200px">' +
+      '<input type="search" id="csv-admin-search" placeholder="بحث بالاسم / رقم المنشأة / السجل / البطاقة..." value="' +
+      (q.replace(/"/g, '&quot;')) +
+      '" style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:13px">' +
+      '</div>' +
+      '<button type="button" class="csv-btn csv-btn-soft" id="csv-clear-session">مسح بيانات الجلسة</button>' +
+      '</div>' +
+      '<div class="sub" style="margin-bottom:10px">المعروض: <strong>' + recs.length + '</strong> من أصل <strong>' + all.length + '</strong> · اضغط على صف لفتح تفاصيل المنشأة وتصنيفها يدوياً</div>' +
+      (all.length === 0
+        ? '<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد نتائج بعد. افتح تبويب المستثمر أو المحاسب، حلّل العيّنة، ثم اضغط «إرسال للمتابعة».</p>'
+        : recs.length === 0
+          ? '<p style="text-align:center;color:#64748b;padding:20px;font-size:13px">لا نتائج مطابقة للبحث.</p>'
+          : '<div style="overflow-x:auto"><table class="csv-table"><thead><tr>' +
+            '<th>#</th><th>المنشأة</th><th>السجل / البطاقة</th><th>مقدّم الفحص</th><th>المبلغ</th><th>آلي</th><th>معتمد</th><th></th>' +
+            '</tr></thead><tbody>' +
+            recs
+              .map(function (r, i) {
+                const auto = (r.summary && r.summary.classification) || 'review';
+                const eff = effectiveClass(r);
+                return (
+                  '<tr data-rec-id="' + r.id + '" style="cursor:pointer">' +
+                  '<td>' + (recs.length - i) + '</td>' +
+                  '<td><strong>' + (r.companyName || '—') + '</strong><br><small style="color:#64748b">' + (r.entityId || '') + '</small></td>' +
+                  '<td style="font-size:11px;direction:ltr;text-align:right">' +
+                  (r.crNumber ? formatCR(r.crNumber) : '—') +
+                  '<br>' +
+                  (r.taxCard ? formatTaxCard(r.taxCard) : '—') +
+                  '</td>' +
+                  '<td>' + (r.role === 'auditor' ? 'محاسب' : 'مستثمر') + '</td>' +
+                  '<td>' + fmtMoney(r.summary && r.summary.totalAmount) + '</td>' +
+                  '<td><span class="csv-pill ' + classPill(auto) + '">' + classLabel(auto) + '</span></td>' +
+                  '<td><span class="csv-pill ' + classPill(eff) + '">' + classLabel(eff) + (r.adminClass ? ' ★' : '') + '</span></td>' +
+                  '<td><button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:11px" data-open-rec="' + r.id + '">تفاصيل</button></td>' +
+                  '</tr>'
+                );
+              })
+              .join('') +
+            '</tbody></table></div>') +
+      '</div>' +
+      '<div id="csv-admin-detail" style="display:none"></div>' +
+      '<p class="csv-footnote">التصنيف الآلي من العيّنة · التصنيف المعتمد يمكن تعديله يدوياً من التفاصيل. امسح الجلسة بعد انتهاء العرض.</p>' +
+      '</div>';
+
+    const search = document.getElementById('csv-admin-search');
+    if (search) {
+      let t = null;
+      search.addEventListener('input', function () {
+        clearTimeout(t);
+        t = setTimeout(function () {
+          renderAdminMonitor(search.value);
+          const s2 = document.getElementById('csv-admin-search');
+          if (s2) {
+            s2.focus();
+            try { s2.setSelectionRange(s2.value.length, s2.value.length); } catch (_) {}
+          }
+        }, 200);
+      });
+    }
 
     const clr = document.getElementById('csv-clear-session');
     if (clr) {
-      clr.onclick = () => {
+      clr.onclick = function () {
+        if (!confirm('مسح كل بيانات جلسة العرض من هذا المتصفح؟')) return;
         clearRecords();
         sessionStore.lastAnalysis = null;
         renderAdminMonitor();
-        modal('تم المسح', 'تم مسح بيانات جلسة العرض من هذا المتصفح.', '🧹');
+        modal('تم المسح', 'تم مسح بيانات جلسة العرض. يمكن بدء تجربة جديدة.', '🧹');
       };
     }
+
+    host.querySelectorAll('[data-open-rec]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openAdminDetail(Number(btn.getAttribute('data-open-rec')));
+      });
+    });
+    host.querySelectorAll('tr[data-rec-id]').forEach(function (tr) {
+      tr.addEventListener('click', function () {
+        openAdminDetail(Number(tr.getAttribute('data-rec-id')));
+      });
+    });
+  }
+
+  function openAdminDetail(recId) {
+    const box = document.getElementById('csv-admin-detail');
+    if (!box) return;
+    const rec = loadRecords().find(function (r) { return r.id === recId; });
+    if (!rec) {
+      box.style.display = 'none';
+      return;
+    }
+    const auto = (rec.summary && rec.summary.classification) || 'review';
+    const eff = effectiveClass(rec);
+    const s = rec.summary || {};
+
+    box.style.display = 'block';
+    box.innerHTML =
+      '<div class="csv-card" style="border:2px solid #0d9488">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+      '<div>' +
+      '<h3 style="margin:0 0 4px">تفاصيل المنشأة</h3>' +
+      '<div class="sub" style="margin:0">' + (rec.companyName || '—') + '</div>' +
+      '</div>' +
+      '<button type="button" class="csv-btn csv-btn-soft" id="csv-detail-close" style="padding:6px 12px;font-size:12px">إغلاق</button>' +
+      '</div>' +
+      '<div class="csv-grid" style="margin-top:14px">' +
+      '<div><span class="k">رقم التعريف الرسمي</span><br><span class="v">' + (rec.entityId || '—') + '</span></div>' +
+      '<div><span class="k">مقدّم الفحص</span><br><span class="v">' + (rec.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر') + '</span></div>' +
+      '<div><span class="k">السجل التجاري الموحد</span><br><span class="v" dir="ltr">' + (rec.crNumber ? formatCR(rec.crNumber) : '—') + '</span></div>' +
+      '<div><span class="k">البطاقة الضريبية</span><br><span class="v" dir="ltr">' + (rec.taxCard ? formatTaxCard(rec.taxCard) : '—') + '</span></div>' +
+      '<div><span class="k">التصنيف الآلي</span><br><span class="csv-pill ' + classPill(auto) + '">' + classLabel(auto) + '</span></div>' +
+      '<div><span class="k">التصنيف المعتمد</span><br><span class="csv-pill ' + classPill(eff) + '">' + classLabel(eff) + (rec.adminClass ? ' (يدوي)' : ' (آلي)') + '</span></div>' +
+      '</div>' +
+      '<div class="csv-kpi" style="margin-top:14px">' +
+      '<div><div class="v">' + (s.okCount || 0) + '</div><div class="l">معاملات</div></div>' +
+      '<div><div class="v">' + (s.validCount || 0) + '</div><div class="l">صالحة</div></div>' +
+      '<div><div class="v">' + (s.matchCount || 0) + '</div><div class="l">مطابقة</div></div>' +
+      '<div><div class="v">' + fmtMoney(s.totalAmount) + '</div><div class="l">المبلغ</div></div>' +
+      '</div>' +
+      '<p style="font-size:13px;color:#374151;margin:12px 0;line-height:1.6">' + (s.reason || '') + '</p>' +
+      '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px;margin-top:8px">' +
+      '<div style="font-weight:700;font-size:13px;margin-bottom:10px">تصنيف الأدمن اليدوي</div>' +
+      '<div class="csv-actions">' +
+      '<button type="button" class="csv-btn" style="background:#059669;color:#fff" data-set-class="strong">تصنيف: جادة</button>' +
+      '<button type="button" class="csv-btn" style="background:#dc2626;color:#fff" data-set-class="weak">تصنيف: غير جادة</button>' +
+      '<button type="button" class="csv-btn csv-btn-soft" data-set-class="review">تحتاج مراجعة</button>' +
+      '<button type="button" class="csv-btn csv-btn-soft" data-set-class="">إعادة للآلي فقط</button>' +
+      '</div>' +
+      '</div>' +
+      (rec.results && rec.results.length
+        ? '<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">المعاملات في العيّنة</div>' +
+          rec.results
+            .map(function (x, i) {
+              if (!x.ok) return '<div class="csv-inv">معاملة ' + (i + 1) + ' — تعذّر الاستخلاص</div>';
+              const d = x.data || {};
+              return (
+                '<div class="csv-inv">' +
+                '<strong>معاملة ' + (i + 1) + ' — ' + (x.side || '') + '</strong> · ' +
+                (d.status || '') +
+                '<br><span style="font-size:12px">' +
+                ((d.issuer && d.issuer.name) || '') +
+                ' → ' +
+                ((d.receiver && d.receiver.name) || '') +
+                '</span>' +
+                '<div style="font-weight:800;margin-top:4px">' + fmtMoney(d.totalAmount) + '</div></div>'
+              );
+            })
+            .join('') +
+          '</div>'
+        : '') +
+      '</div>';
+
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const closeBtn = document.getElementById('csv-detail-close');
+    if (closeBtn) closeBtn.onclick = function () { box.style.display = 'none'; box.innerHTML = ''; };
+
+    box.querySelectorAll('[data-set-class]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const val = btn.getAttribute('data-set-class');
+        const list = loadRecords();
+        const idx = list.findIndex(function (r) { return r.id === recId; });
+        if (idx < 0) return;
+        list[idx].adminClass = val === '' ? null : val;
+        saveRecords(list);
+        renderAdminMonitor((document.getElementById('csv-admin-search') || {}).value || '');
+        openAdminDetail(recId);
+        modal(
+          'تم تحديث التصنيف',
+          'التصنيف المعتمد للمنشأة: <strong>' + classLabel(effectiveClass(list[idx])) + '</strong>',
+          '✅'
+        );
+      });
+    });
   }
 
   function initPortalSection(forcedRole) {
