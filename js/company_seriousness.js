@@ -1109,7 +1109,7 @@
           <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
         </div>
         <div class="csv-field">
-          <label>رقم السجل التجاري الموحد <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(15 رقم · ثلاث مجموعات)</span></label>
+          <label>رقم السجل التجاري الموحد <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(15 رقم)</span></label>
           <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" value="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field" id="csv-auditor-extra" style="display:${isAuditor ? 'block' : 'none'}">
@@ -1628,7 +1628,7 @@
     shell.innerHTML = `
       <div style="max-width:960px;margin:0 auto;padding:20px 16px 40px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div style="font-weight:800;color:#0b1f3a;font-size:15px">منظومة إثبات الجدية  · بوابة ${roleLabel}</div>
+          <div style="font-weight:800;color:#0b1f3a;font-size:15px">مؤشر إثبات الجدية  · بوابة ${roleLabel}</div>
           <button type="button" id="csv-public-close" style="border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:700;cursor:pointer;font-size:12px">إغلاق والعودة</button>
         </div>
         <div id="csv-public-root"></div>
