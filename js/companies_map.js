@@ -193,6 +193,16 @@ function toggleCompaniesMapFullscreen() {
     const btn = document.getElementById('cmap-fullscreen-btn');
     if (!wrap) return;
     const on = wrap.classList.toggle('cmap-fullscreen');
+    // إخفاء شريط الأدمن الجانبي أثناء ملء الشاشة لعدم التداخل
+    const adminSide = document.getElementById('adminSidebar');
+    if (adminSide) {
+        if (on) {
+            adminSide.dataset.prevDisplay = adminSide.style.display || '';
+            adminSide.style.display = 'none';
+        } else if (adminSide.dataset.prevDisplay !== undefined) {
+            adminSide.style.display = adminSide.dataset.prevDisplay;
+        }
+    }
     if (btn) {
         btn.innerHTML = on
             ? '<i class="fas fa-compress"></i> إنهاء ملء الشاشة'
@@ -200,14 +210,18 @@ function toggleCompaniesMapFullscreen() {
     }
     setTimeout(function () {
         if (companiesMap) companiesMap.invalidateSize();
-    }, 200);
+    }, 250);
     // ESC للخروج
     if (on) {
         window._cmapFsEsc = function (e) {
             if (e.key === 'Escape') {
                 wrap.classList.remove('cmap-fullscreen');
                 if (btn) btn.innerHTML = '<i class="fas fa-expand"></i> ملء الشاشة';
-                setTimeout(function () { if (companiesMap) companiesMap.invalidateSize(); }, 200);
+                const side = document.getElementById('adminSidebar');
+                if (side && side.dataset.prevDisplay !== undefined) {
+                    side.style.display = side.dataset.prevDisplay;
+                }
+                setTimeout(function () { if (companiesMap) companiesMap.invalidateSize(); }, 250);
                 document.removeEventListener('keydown', window._cmapFsEsc);
             }
         };
