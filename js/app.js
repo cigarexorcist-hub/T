@@ -5857,105 +5857,253 @@ if (document.readyState === 'loading') {
         let biCharts = {};
         function updateBIChartsByPeriod() { initBICharts(); }
         function initBICharts() {
-            const colors = { primary: '#0d6efd', success: '#27ae60', warning: '#f39c12', danger: '#e74c3c', info: '#0dcaf0' };
-            // أرقام متسقة مع خريطة الشركات (12,188 منشأة)
             const statusData = { active: 8088, stopped: 1491, developing: 1500, trial: 1109 };
+
+            function grad(ctx, c1, c2) {
+                const g = ctx.createLinearGradient(0, 0, 0, 280);
+                g.addColorStop(0, c1);
+                g.addColorStop(1, c2);
+                return g;
+            }
+            function softTooltip() {
+                return {
+                    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                    titleFont: { family: 'Tajawal, sans-serif', size: 13, weight: '700' },
+                    bodyFont: { family: 'Tajawal, sans-serif', size: 12 },
+                    padding: 12,
+                    cornerRadius: 10,
+                    displayColors: true,
+                    boxPadding: 4
+                };
+            }
+            const anim = {
+                duration: 1400,
+                easing: 'easeInOutQuart'
+            };
+            const interact = {
+                mode: 'index',
+                intersect: false
+            };
+
             const ctx1 = document.getElementById('mainGrowthChart');
             if (ctx1) {
                 if (biCharts.growth) biCharts.growth.destroy();
-                biCharts.growth = new Chart(ctx1.getContext('2d'), {
+                const c = ctx1.getContext('2d');
+                biCharts.growth = new Chart(c, {
                     type: 'line',
                     data: {
                         labels: ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'],
-                        datasets: [{
-                            label: 'الشركات المسجّلة',
-                            data: [9800, 10250, 10800, 11200, 11750, 12188],
-                            borderColor: colors.primary,
-                            backgroundColor: 'rgba(13, 110, 253, 0.12)',
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 4,
-                            pointBackgroundColor: colors.primary
-                        }]
+                        datasets: [
+                            {
+                                label: 'إجمالي الشركات',
+                                data: [9800, 10250, 10800, 11200, 11750, 12188],
+                                borderColor: '#0ea5e9',
+                                backgroundColor: grad(c, 'rgba(14,165,233,0.35)', 'rgba(14,165,233,0.02)'),
+                                fill: true,
+                                tension: 0.45,
+                                pointRadius: 5,
+                                pointHoverRadius: 8,
+                                pointBackgroundColor: '#fff',
+                                pointBorderColor: '#0ea5e9',
+                                pointBorderWidth: 2,
+                                borderWidth: 3
+                            },
+                            {
+                                label: 'الشركات العاملة',
+                                data: [6400, 6800, 7200, 7500, 7800, 8088],
+                                borderColor: '#10b981',
+                                backgroundColor: grad(c, 'rgba(16,185,129,0.25)', 'rgba(16,185,129,0.01)'),
+                                fill: true,
+                                tension: 0.45,
+                                pointRadius: 4,
+                                pointHoverRadius: 7,
+                                pointBackgroundColor: '#fff',
+                                pointBorderColor: '#10b981',
+                                pointBorderWidth: 2,
+                                borderWidth: 2.5,
+                                borderDash: [0]
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: true, position: 'top' } },
-                        scales: { y: { beginAtZero: false, suggestedMin: 9000 } }
+                        interaction: interact,
+                        animation: anim,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: { usePointStyle: true, pointStyle: 'circle', font: { family: 'Tajawal, sans-serif', size: 12 } }
+                            },
+                            tooltip: Object.assign(softTooltip(), {
+                                callbacks: {
+                                    label: function (ctx) {
+                                        return ' ' + ctx.dataset.label + ': ' + Number(ctx.raw).toLocaleString('en-US');
+                                    }
+                                }
+                            })
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                suggestedMin: 6000,
+                                grid: { color: 'rgba(148,163,184,0.15)' },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            }
+                        }
                     }
                 });
             }
+
             const ctx2 = document.getElementById('statusChartBI');
             if (ctx2) {
                 if (biCharts.status) biCharts.status.destroy();
+                const totalStatus = statusData.active + statusData.stopped + statusData.developing + statusData.trial;
                 biCharts.status = new Chart(ctx2.getContext('2d'), {
                     type: 'doughnut',
                     data: {
                         labels: ['عاملة', 'متوقفة مؤقتاً', 'تحت التطوير', 'تشغيل تجريبي'],
                         datasets: [{
                             data: [statusData.active, statusData.stopped, statusData.developing, statusData.trial],
-                            backgroundColor: [colors.success, colors.danger, colors.warning, colors.info],
-                            borderWidth: 2,
-                            borderColor: '#fff'
+                            backgroundColor: [
+                                'rgba(16,185,129,0.9)',
+                                'rgba(239,68,68,0.9)',
+                                'rgba(245,158,11,0.9)',
+                                'rgba(14,165,233,0.9)'
+                            ],
+                            borderWidth: 3,
+                            borderColor: '#fff',
+                            hoverOffset: 12
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        cutout: '68%',
+                        animation: Object.assign({}, anim, {
+                            animateRotate: true,
+                            animateScale: true
+                        }),
                         plugins: {
-                            legend: { position: 'bottom' },
-                            tooltip: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { usePointStyle: true, padding: 14, font: { family: 'Tajawal, sans-serif', size: 12 } }
+                            },
+                            tooltip: Object.assign(softTooltip(), {
                                 callbacks: {
                                     label: function (ctx) {
-                                        const total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
-                                        const pct = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
-                                        return ctx.label + ': ' + ctx.raw.toLocaleString('en-US') + ' (' + pct + '%)';
+                                        const pct = totalStatus ? ((ctx.raw / totalStatus) * 100).toFixed(1) : 0;
+                                        return ' ' + ctx.label + ': ' + Number(ctx.raw).toLocaleString('en-US') + ' (' + pct + '%)';
                                     }
                                 }
-                            }
+                            })
                         }
-                    }
+                    },
+                    plugins: [{
+                        id: 'centerText',
+                        afterDraw: function (chart) {
+                            const { ctx, chartArea: { top, bottom, left, right } } = chart;
+                            const cx = (left + right) / 2;
+                            const cy = (top + bottom) / 2;
+                            ctx.save();
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillStyle = '#0f172a';
+                            ctx.font = '800 22px Tajawal, sans-serif';
+                            ctx.fillText(totalStatus.toLocaleString('en-US'), cx, cy - 8);
+                            ctx.fillStyle = '#64748b';
+                            ctx.font = '600 12px Tajawal, sans-serif';
+                            ctx.fillText('منشأة', cx, cy + 14);
+                            ctx.restore();
+                        }
+                    }]
                 });
             }
+
             const ctx3 = document.getElementById('activitiesChartBI');
             if (ctx3) {
                 if (biCharts.activities) biCharts.activities.destroy();
-                biCharts.activities = new Chart(ctx3.getContext('2d'), {
+                const c3 = ctx3.getContext('2d');
+                biCharts.activities = new Chart(c3, {
                     type: 'bar',
                     data: {
                         labels: ['نسيج', 'غذائي', 'أدوية', 'أخشاب', 'هندسي', 'بناء', 'بلاستيك', 'معادن'],
                         datasets: [{
                             label: 'عدد المنشآت',
                             data: [1012, 986, 995, 994, 985, 967, 962, 925],
-                            backgroundColor: [
-                                '#0d6efd', '#27ae60', '#9b59b6', '#e67e22',
-                                '#1abc9c', '#3498db', '#e74c3c', '#34495e'
-                            ],
-                            borderRadius: 6
+                            backgroundColor: grad(c3, 'rgba(99,102,241,0.95)', 'rgba(14,165,233,0.75)'),
+                            borderRadius: 10,
+                            borderSkipped: false,
+                            maxBarThickness: 28
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         indexAxis: 'y',
-                        plugins: { legend: { display: false } },
-                        scales: { x: { beginAtZero: true } }
+                        animation: anim,
+                        interaction: { mode: 'nearest', intersect: true },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: Object.assign(softTooltip(), {
+                                callbacks: {
+                                    label: function (ctx) {
+                                        return ' ' + Number(ctx.raw).toLocaleString('en-US') + ' منشأة';
+                                    }
+                                }
+                            })
+                        },
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(148,163,184,0.12)' },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            y: {
+                                grid: { display: false },
+                                ticks: { font: { family: 'Tajawal, sans-serif', size: 12 } }
+                            }
+                        }
                     }
                 });
             }
+
             const ctx4 = document.getElementById('energyChartBI');
             if (ctx4) {
                 if (biCharts.energy) biCharts.energy.destroy();
                 biCharts.energy = new Chart(ctx4.getContext('2d'), {
-                    type: 'pie',
+                    type: 'doughnut',
                     data: {
                         labels: ['كهرباء', 'غاز', 'طاقة شمسية'],
-                        datasets: [{ data: [55, 30, 15], backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4'] }]
+                        datasets: [{
+                            data: [55, 30, 15],
+                            backgroundColor: ['#fbbf24', '#f87171', '#2dd4bf'],
+                            borderWidth: 3,
+                            borderColor: '#fff',
+                            hoverOffset: 10
+                        }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '60%',
+                        animation: anim,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { usePointStyle: true, font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            tooltip: softTooltip()
+                        }
+                    }
                 });
             }
+
             const ctx5 = document.getElementById('importsChartBI');
             if (ctx5) {
                 if (biCharts.imports) biCharts.imports.destroy();
@@ -5964,23 +6112,92 @@ if (document.readyState === 'loading') {
                     data: {
                         labels: ['الآلات', 'الخامات'],
                         datasets: [
-                            { label: 'مستورد', data: [68, 45], backgroundColor: colors.danger },
-                            { label: 'محلي', data: [32, 55], backgroundColor: colors.success }
+                            {
+                                label: 'مستورد %',
+                                data: [68, 45],
+                                backgroundColor: 'rgba(239,68,68,0.85)',
+                                borderRadius: 8,
+                                maxBarThickness: 36
+                            },
+                            {
+                                label: 'محلي %',
+                                data: [32, 55],
+                                backgroundColor: 'rgba(16,185,129,0.85)',
+                                borderRadius: 8,
+                                maxBarThickness: 36
+                            }
                         ]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100 } } }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: anim,
+                        interaction: interact,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: { usePointStyle: true, font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            tooltip: softTooltip()
+                        },
+                        scales: {
+                            y: {
+                                max: 100,
+                                grid: { color: 'rgba(148,163,184,0.12)' },
+                                ticks: { callback: function (v) { return v + '%'; }, font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            }
+                        }
+                    }
                 });
             }
+
             const ctx6 = document.getElementById('wasteChartBI');
             if (ctx6) {
                 if (biCharts.waste) biCharts.waste.destroy();
-                biCharts.waste = new Chart(ctx6.getContext('2d'), {
+                const c6 = ctx6.getContext('2d');
+                biCharts.waste = new Chart(c6, {
                     type: 'bar',
                     data: {
                         labels: ['عضوية', 'معادن', 'بلاستيك', 'ورق', 'كيماويات'],
-                        datasets: [{ label: 'الكمية (طن)', data: [4200, 3100, 2450, 1800, 900], backgroundColor: '#95a5a6' }]
+                        datasets: [{
+                            label: 'الكمية (طن)',
+                            data: [4200, 3100, 2450, 1800, 900],
+                            backgroundColor: grad(c6, 'rgba(100,116,139,0.95)', 'rgba(148,163,184,0.5)'),
+                            borderRadius: 10,
+                            borderSkipped: false,
+                            maxBarThickness: 40
+                        }]
                     },
-                    options: { responsive: true, maintainAspectRatio: false }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: anim,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: Object.assign(softTooltip(), {
+                                callbacks: {
+                                    label: function (ctx) {
+                                        return ' ' + Number(ctx.raw).toLocaleString('en-US') + ' طن';
+                                    }
+                                }
+                            })
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(148,163,184,0.12)' },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { family: 'Tajawal, sans-serif' } }
+                            }
+                        }
+                    }
                 });
             }
         }
