@@ -580,21 +580,21 @@
       classification = 'weak';
       label = 'عيّنة غير مكتملة';
       reason =
-        'لم يُستخرج أي معاملة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
+        'لم يُستخرج أي فاتورة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
     } else if (target && matchCount === 0) {
       classification = 'weak';
       label = 'عدم اتساق الهوية';
       reason =
-        'المعاملات المستخرجة غير مرتبطة برقم المنشأة المستهدف. العيّنة لا تدعم إثبات الجدية.';
+        'الفواتير المستخرجة غير مرتبطة برقم المنشأة المستهدف. العيّنة لا تدعم إثبات الجدية.';
     } else if (ratioValid >= 0.8 && (matchCount >= 1 || !target) && okItems.length >= 1) {
       classification = 'strong';
       label = 'مؤشرات جدية إيجابية';
       reason =
-        'اتساق هوية المنشأة مع معاملات موثقة رسمية بحالة صالحة. مؤشر أوّلي داعم للعناية الواجبة — وليس اعتماداً نهائياً.';
+        'اتساق هوية المنشأة مع معاملات موثقة رسمية بحالة صالحة. مؤشر أوّلي لإثبات الجدية — وليس اعتماداً نهائياً.';
     } else if (ratioValid < 0.5) {
       classification = 'weak';
       label = 'مؤشرات ضعف في العيّنة';
-      reason = 'نسبة المعاملات غير الصالحة مرتفعة ضمن العيّنة المقدّمة.';
+      reason = 'نسبة الفواتير غير الصالحة مرتفعة ضمن العيّنة المقدّمة.';
     } else {
       classification = 'review';
       label = 'تحتاج استكمال';
@@ -1022,7 +1022,7 @@
             stopQrScanner();
             modal(
               'تم المسح بنجاح',
-              'تم استخراج رابط المعاملة الرسمية من رمز QR ووضعه في الحقل.',
+              'تم استخراج رابط الفاتورة الرسمية من رمز QR ووضعه في الحقل.',
               '📷'
             );
           } else {
@@ -1121,8 +1121,8 @@
     }
     const { inbound, outbound } = collectLinks();
     const all = [
-      ...inbound.map((u) => ({ url: u, side: 'وارد' })),
-      ...outbound.map((u) => ({ url: u, side: 'صادر' }))
+      ...inbound.map((u) => ({ url: u, side: 'مشتريات' })),
+      ...outbound.map((u) => ({ url: u, side: 'مبيعات' }))
     ];
     if (!all.length) {
       modal('لا توجد روابط', 'أضف رابط إثبات واحداً على الأقل للمتابعة.', '📎');
@@ -1198,7 +1198,7 @@
         <h3>مؤشر الجدية — نتيجة العيّنة</h3>
         <div class="sub">${analysis.companyName} · رقم المنشأة: ${analysis.entityId} · ${analysis.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر'}</div>
         <div class="csv-kpi">
-          <div><div class="v">${s.okCount}</div><div class="l">معاملة مُستخرجة</div></div>
+          <div><div class="v">${s.okCount}</div><div class="l">فاتورة مُستخرجة</div></div>
           <div><div class="v" style="color:#059669">${s.validCount}</div><div class="l">صالحة (Valid)</div></div>
           <div><div class="v" style="color:#0d9488">${s.matchCount}</div><div class="l">مطابقة للهوية</div></div>
           <div><div class="v">${fmtMoney(s.totalAmount)}</div><div class="l">إجمالي العيّنة</div></div>
@@ -1206,7 +1206,7 @@
         ${analysis.results
           .map((r, i) => {
             if (!r.ok) {
-              return `<div class="csv-inv"><div class="hd"><strong>معاملة ${i + 1} — ${r.side}</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>
+              return `<div class="csv-inv"><div class="hd"><strong>فاتورة ${i + 1} — ${r.side}</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>
                 <div style="font-size:12px;color:#b91c1c;margin-top:6px;line-height:1.5">${r.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.'}</div>
                 <div style="font-size:11px;color:#64748b;margin-top:4px;direction:ltr;word-break:break-all">${r.url || ''}</div>
               </div>`;
@@ -1220,7 +1220,7 @@
             const invDateRaw = invoiceDateRaw(d);
             return `<div class="csv-inv">
               <div class="hd">
-                <div><strong>معاملة ${i + 1} — ${r.side}</strong>
+                <div><strong>فاتورة ${i + 1} — ${r.side}</strong>
                   <div style="font-size:11px;color:#64748b">${d.documentTypeNameSecondaryLang || 'معاملة'} · تاريخ الإصدار: <strong style="color:#0b1f3a">${invDate}</strong>${invDateRaw ? ' <span dir="ltr">(' + invDateRaw + ')</span>' : ''}</div>
                 </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1361,7 +1361,7 @@
         </div>
         <div class="csv-links">
           <div class="csv-linkbox">
-            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة</h4>
+            <h4><span class="csv-tag in">مشتريات</span> فواتير مشتريات</h4>
             <div id="csv-links-in"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
