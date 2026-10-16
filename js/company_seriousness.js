@@ -141,13 +141,86 @@
   function classLabel(c) {
     if (c === 'strong') return 'جادة';
     if (c === 'weak') return 'غير جادة';
+    if (c === 'stopped') return 'متوقفة';
+    if (c === 'started') return 'بدأت النشاط';
     return 'تحتاج مراجعة';
   }
 
   function classPill(c) {
     if (c === 'strong') return 'csv-pill-s';
     if (c === 'weak') return 'csv-pill-w';
+    if (c === 'stopped') return 'csv-pill-stop';
+    if (c === 'started') return 'csv-pill-start';
     return 'csv-pill-r';
+  }
+
+  function classSelectHtml(current, recId) {
+    const opts = [
+      ['', '— آلي —'],
+      ['strong', 'جادة'],
+      ['weak', 'غير جادة'],
+      ['stopped', 'متوقفة'],
+      ['started', 'بدأت النشاط'],
+      ['review', 'تحتاج مراجعة']
+    ];
+    return (
+      '<select class="csv-class-select" data-class-rec="' +
+      recId +
+      '" onclick="event.stopPropagation()" style="font-family:inherit;font-size:11px;padding:4px 6px;border-radius:8px;border:1.5px solid #e2e8f0;max-width:130px">' +
+      opts
+        .map(function (o) {
+          const sel =
+            (current === o[0] || (!current && o[0] === '')) ? ' selected' : '';
+          return '<option value="' + o[0] + '"' + sel + '>' + o[1] + '</option>';
+        })
+        .join('') +
+      '</select>'
+    );
+  }
+
+  /** تجميع السجلات حسب المنشأة */
+  function groupCompanies(records) {
+    const map = {};
+    records.forEach(function (r) {
+      const key = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
+      if (!map[key]) {
+        map[key] = {
+          key: key,
+          companyName: r.companyName || '—',
+          entityId: r.entityId || '',
+          crNumber: r.crNumber || '',
+          taxCard: r.taxCard || '',
+          records: [],
+          adminClass: null,
+          lastAt: r.at
+        };
+      }
+      const g = map[key];
+      g.records.push(r);
+      if (r.companyName) g.companyName = r.companyName;
+      if (r.crNumber) g.crNumber = r.crNumber;
+      if (r.taxCard) g.taxCard = r.taxCard;
+      if (r.entityId) g.entityId = r.entityId;
+      // آخر تصنيف يدوي غير فارغ يسود
+      if (r.adminClass) g.adminClass = r.adminClass;
+      if (r.at && (!g.lastAt || r.at > g.lastAt)) g.lastAt = r.at;
+    });
+    return Object.keys(map).map(function (k) {
+      const g = map[k];
+      // ملخص آلي من أحدث سجل
+      const latest = g.records.slice().sort(function (a, b) {
+        return (b.at || '').localeCompare(a.at || '');
+      })[0];
+      g.autoClass = (latest && latest.summary && latest.summary.classification) || 'review';
+      g.effective = g.adminClass || g.autoClass;
+      g.totalAmount = g.records.reduce(function (s, r) {
+        return s + ((r.summary && r.summary.totalAmount) || 0);
+      }, 0);
+      g.invoiceCount = g.records.reduce(function (s, r) {
+        return s + ((r.results && r.results.length) || 0);
+      }, 0);
+      return g;
+    });
   }
 
   function isValidEtaLink(url) {
@@ -451,6 +524,32 @@
       .csv-pill-s { background: #d1fae5; color: #065f46; }
       .csv-pill-w { background: #fee2e2; color: #991b1b; }
       .csv-pill-r { background: #fef3c7; color: #92400e; }
+      .csv-pill-stop { background: #e2e8f0; color: #475569; }
+      .csv-pill-start { background: #dbeafe; color: #1d4ed8; }
+      .csv-qr-btn {
+        border: 1.5px solid #0d9488; background: #f0fdfa; color: #0f766e;
+        border-radius: 8px; padding: 6px 8px; cursor: pointer; font-size: 14px;
+        flex-shrink: 0; font-family: inherit; line-height: 1;
+      }
+      .csv-qr-btn:hover { background: #ccfbf1; }
+      .csv-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+      .csv-filter-chip {
+        border: 1.5px solid #e2e8f0; background: #fff; border-radius: 20px;
+        padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+        font-family: inherit; color: #0b1f3a;
+      }
+      .csv-filter-chip.on { background: #0b1f3a; color: #fff; border-color: #0b1f3a; }
+      #csv-qr-overlay {
+        display: none; position: fixed; inset: 0; z-index: 10100;
+        background: rgba(11,31,58,.75); align-items: center; justify-content: center; padding: 16px;
+      }
+      #csv-qr-overlay.show { display: flex; }
+      #csv-qr-box {
+        background: #fff; border-radius: 16px; padding: 16px; max-width: 420px; width: 100%;
+        text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,.3);
+      }
+      #csv-qr-reader { width: 100%; min-height: 240px; border-radius: 12px; overflow: hidden; background: #000; }
+      #csv-qr-reader video { width: 100% !important; border-radius: 12px; }
       .csv-portal-bar {
         display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
       }
@@ -548,9 +647,24 @@
     for (let i = 0; i < 5; i++) {
       const row = document.createElement('div');
       row.className = 'csv-row';
-      row.innerHTML = `<input type="url" data-csv-type="${type}" data-idx="${i}" placeholder="https://invoicing.eta.gov.eg/documents/.../share/..." spellcheck="false" autocomplete="off"><span data-st="${type}-${i}" style="width:18px;text-align:center;font-size:13px"></span>`;
+      row.innerHTML =
+        '<input type="url" data-csv-type="' +
+        type +
+        '" data-idx="' +
+        i +
+        '" placeholder="https://invoicing.eta.gov.eg/documents/.../share/..." spellcheck="false" autocomplete="off">' +
+        '<button type="button" class="csv-qr-btn" title="مسح رمز QR للفاتورة" data-qr-for="' +
+        type +
+        '-' +
+        i +
+        '">📷</button>' +
+        '<span data-st="' +
+        type +
+        '-' +
+        i +
+        '" style="width:18px;text-align:center;font-size:13px"></span>';
       const input = row.querySelector('input');
-      const validate = () => {
+      const validate = function () {
         const val = input.value.trim();
         const st = row.querySelector('[data-st]');
         if (!val) {
@@ -569,7 +683,7 @@
             'يُقبل فقط رابط الإثبات الرسمي من النطاق:<br><strong dir="ltr">https://invoicing.eta.gov.eg</strong><br><br>أي رابط آخر يُرفض فوراً لحماية المنصة.',
             '🚫'
           );
-          setTimeout(() => {
+          setTimeout(function () {
             if (input.classList.contains('bad')) {
               input.value = '';
               input.classList.remove('bad');
@@ -578,10 +692,124 @@
           }, 350);
         }
       };
-      input.addEventListener('paste', () => setTimeout(validate, 20));
+      input.addEventListener('paste', function () { setTimeout(validate, 20); });
       input.addEventListener('blur', validate);
+      const qrBtn = row.querySelector('.csv-qr-btn');
+      qrBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        openQrScanner(input, validate);
+      });
       box.appendChild(row);
     }
+  }
+
+  let qrScanner = null;
+  let qrHtml5Loaded = false;
+
+  function loadHtml5Qrcode() {
+    return new Promise(function (resolve, reject) {
+      if (window.Html5Qrcode) {
+        resolve();
+        return;
+      }
+      if (qrHtml5Loaded) {
+        const t = setInterval(function () {
+          if (window.Html5Qrcode) {
+            clearInterval(t);
+            resolve();
+          }
+        }, 100);
+        setTimeout(function () {
+          clearInterval(t);
+          reject(new Error('timeout'));
+        }, 8000);
+        return;
+      }
+      qrHtml5Loaded = true;
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+      s.onload = function () { resolve(); };
+      s.onerror = function () { reject(new Error('load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  function extractEtaUrlFromText(text) {
+    if (!text) return null;
+    const t = String(text).trim();
+    if (isValidEtaLink(t)) return t;
+    const m = t.match(/https:\/\/invoicing\.eta\.gov\.eg\/documents\/[A-Za-z0-9]+\/share\/[A-Za-z0-9]+/);
+    return m ? m[0] : null;
+  }
+
+  async function openQrScanner(targetInput, onDone) {
+    let overlay = document.getElementById('csv-qr-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'csv-qr-overlay';
+      overlay.innerHTML =
+        '<div id="csv-qr-box">' +
+        '<div style="font-weight:800;margin-bottom:8px;color:#0b1f3a">مسح رمز الفاتورة (QR)</div>' +
+        '<p style="font-size:12px;color:#64748b;margin:0 0 12px;line-height:1.5">وجّه الكاميرا نحو رمز الاستجابة السريعة على الفاتورة الإلكترونية</p>' +
+        '<div id="csv-qr-reader"></div>' +
+        '<p id="csv-qr-status" style="font-size:12px;color:#0d9488;margin:10px 0 0;min-height:18px"></p>' +
+        '<button type="button" class="csv-btn csv-btn-soft" id="csv-qr-close" style="margin-top:12px">إغلاق</button>' +
+        '</div>';
+      document.body.appendChild(overlay);
+    }
+    overlay.classList.add('show');
+    const status = document.getElementById('csv-qr-status');
+    status.textContent = 'جاري تهيئة الكاميرا...';
+
+    document.getElementById('csv-qr-close').onclick = function () {
+      stopQrScanner();
+    };
+
+    try {
+      await loadHtml5Qrcode();
+      if (qrScanner) {
+        try { await qrScanner.stop(); } catch (_) {}
+        qrScanner = null;
+      }
+      qrScanner = new Html5Qrcode('csv-qr-reader');
+      status.textContent = 'وجّه الكاميرا للرمز...';
+      await qrScanner.start(
+        { facingMode: 'environment' },
+        { fps: 8, qrbox: { width: 220, height: 220 } },
+        function (decoded) {
+          const url = extractEtaUrlFromText(decoded);
+          if (url) {
+            targetInput.value = url;
+            if (typeof onDone === 'function') onDone();
+            status.textContent = 'تم قراءة الرابط بنجاح';
+            stopQrScanner();
+            modal(
+              'تم المسح بنجاح',
+              'تم استخراج رابط المعاملة الرسمية من رمز QR ووضعه في الحقل.',
+              '📷'
+            );
+          } else {
+            status.textContent = 'الرمز لا يحتوي على رابط فاتورة رسمي — أعد المحاولة';
+          }
+        },
+        function () {}
+      );
+    } catch (err) {
+      status.textContent = 'تعذّر فتح الكاميرا. تأكد من السماح بالوصول أو الصق الرابط يدوياً.';
+      console.warn(err);
+    }
+  }
+
+  async function stopQrScanner() {
+    try {
+      if (qrScanner) {
+        await qrScanner.stop();
+        qrScanner.clear();
+      }
+    } catch (_) {}
+    qrScanner = null;
+    const overlay = document.getElementById('csv-qr-overlay');
+    if (overlay) overlay.classList.remove('show');
   }
 
   function collectLinks() {
@@ -944,85 +1172,108 @@
     setRole(sessionStore.role);
   }
 
-  function renderAdminMonitor(filterText) {
+  function renderAdminMonitor(opts) {
     const host = document.getElementById('bi-seriousness-monitor');
     if (!host) return;
     ensureStyles();
-    const all = loadRecords();
-    const q = (filterText != null
-      ? filterText
-      : (document.getElementById('csv-admin-search') || {}).value || ''
-    ).trim().toLowerCase();
+    opts = opts || {};
+    const allRecs = loadRecords();
+    const companies = groupCompanies(allRecs);
+    const q = (opts.q != null ? opts.q : ((document.getElementById('csv-admin-search') || {}).value || '')).trim().toLowerCase();
+    const statusFilter = opts.status != null ? opts.status : ((document.getElementById('csv-status-filter') || {}).value || 'all');
 
-    const recs = !q
-      ? all
-      : all.filter(function (r) {
-          const hay = [
-            r.companyName,
-            r.entityId,
-            r.crNumber,
-            r.taxCard,
-            r.summary && r.summary.label,
-            r.adminClass,
-            r.role
-          ]
-            .join(' ')
-            .toLowerCase();
-          return hay.indexOf(q) !== -1;
-        });
+    let list = companies;
+    if (statusFilter && statusFilter !== 'all') {
+      list = list.filter(function (c) { return c.effective === statusFilter; });
+    }
+    if (q) {
+      list = list.filter(function (c) {
+        const hay = [c.companyName, c.entityId, c.crNumber, c.taxCard, classLabel(c.effective)].join(' ').toLowerCase();
+        return hay.indexOf(q) !== -1;
+      });
+    }
 
-    const strong = all.filter(function (r) { return effectiveClass(r) === 'strong'; }).length;
-    const weak = all.filter(function (r) { return effectiveClass(r) === 'weak'; }).length;
-    const review = all.filter(function (r) { return effectiveClass(r) === 'review'; }).length;
-    const totalAmt = all.reduce(function (s, r) { return s + ((r.summary && r.summary.totalAmount) || 0); }, 0);
+    const cnt = {
+      all: companies.length,
+      strong: companies.filter(function (c) { return c.effective === 'strong'; }).length,
+      weak: companies.filter(function (c) { return c.effective === 'weak'; }).length,
+      stopped: companies.filter(function (c) { return c.effective === 'stopped'; }).length,
+      started: companies.filter(function (c) { return c.effective === 'started'; }).length,
+      review: companies.filter(function (c) { return c.effective === 'review'; }).length
+    };
+
+    function chip(val, label, n) {
+      const on = statusFilter === val ? ' on' : '';
+      return '<button type="button" class="csv-filter-chip' + on + '" data-filter="' + val + '">' + label + ' (' + n + ')</button>';
+    }
 
     host.innerHTML =
       '<div class="csv-wrap">' +
       '<div class="csv-hero" style="background:linear-gradient(135deg,#0b1f3a,#134e4a)">' +
-      '<h2>متابعة إثبات الجدية</h2>' +
-      '<p>نتائج العيّنات من تبويب المستثمر أو المحاسب في نفس المتصفح — مع بحث وتصنيف يدوي وتفاصيل كل منشأة.</p>' +
+      '<h2>متابعة الشركات — إثبات الجدية</h2>' +
+      '<p>تسجيل المنشآت الواردة من بوابتي المستثمر والمحاسب، مع تصنيف آلي من عيّنة المعاملات وإمكانية التصنيف اليدوي.</p>' +
       '</div>' +
       '<div class="csv-admin-kpi">' +
-      '<div><div class="n">' + all.length + '</div><div class="t">عدد الشركات / الفحوصات</div></div>' +
-      '<div><div class="n" style="color:#059669">' + strong + '</div><div class="t">جادة</div></div>' +
-      '<div><div class="n" style="color:#dc2626">' + weak + '</div><div class="t">غير جادة</div></div>' +
-      '<div><div class="n" style="color:#b45309">' + review + '</div><div class="t">تحتاج مراجعة</div></div>' +
+      '<div><div class="n">' + cnt.all + '</div><div class="t">إجمالي الشركات</div></div>' +
+      '<div><div class="n" style="color:#059669">' + cnt.strong + '</div><div class="t">جادة</div></div>' +
+      '<div><div class="n" style="color:#dc2626">' + cnt.weak + '</div><div class="t">غير جادة</div></div>' +
+      '<div><div class="n" style="color:#1d4ed8">' + cnt.started + '</div><div class="t">بدأت النشاط</div></div>' +
       '</div>' +
       '<div class="csv-card">' +
-      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px">' +
-      '<div style="flex:1;min-width:200px">' +
-      '<input type="search" id="csv-admin-search" placeholder="بحث بالاسم / رقم المنشأة / السجل / البطاقة..." value="' +
-      (q.replace(/"/g, '&quot;')) +
-      '" style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:13px">' +
+      '<div class="csv-filter-bar">' +
+      chip('all', 'الكل', cnt.all) +
+      chip('strong', 'جادة', cnt.strong) +
+      chip('weak', 'غير جادة', cnt.weak) +
+      chip('stopped', 'متوقفة', cnt.stopped) +
+      chip('started', 'بدأت النشاط', cnt.started) +
+      chip('review', 'مراجعة', cnt.review) +
       '</div>' +
+      '<input type="hidden" id="csv-status-filter" value="' + statusFilter + '">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<input type="search" id="csv-admin-search" placeholder="بحث: اسم الشركة / السجل / البطاقة الضريبية..." value="' +
+      String(q).replace(/"/g, '&quot;') +
+      '" style="flex:1;min-width:200px;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:13px">' +
       '<button type="button" class="csv-btn csv-btn-soft" id="csv-clear-session">مسح بيانات الجلسة</button>' +
       '</div>' +
-      '<div class="sub" style="margin-bottom:10px">المعروض: <strong>' + recs.length + '</strong> من أصل <strong>' + all.length + '</strong> · اضغط على صف لفتح تفاصيل المنشأة وتصنيفها يدوياً</div>' +
-      (all.length === 0
-        ? '<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد نتائج بعد. افتح تبويب المستثمر أو المحاسب، حلّل العيّنة، ثم اضغط «إرسال للمتابعة».</p>'
-        : recs.length === 0
-          ? '<p style="text-align:center;color:#64748b;padding:20px;font-size:13px">لا نتائج مطابقة للبحث.</p>'
+      '<div class="sub" style="margin-bottom:10px">المعروض: <strong>' + list.length + '</strong> شركة · اضغط للتفاصيل والفواتير</div>' +
+      (companies.length === 0
+        ? '<p style="text-align:center;color:#64748b;padding:28px;font-size:13px">لا توجد شركات بعد. أرسل عيّنة من بوابة المستثمر أو المحاسب.</p>'
+        : list.length === 0
+          ? '<p style="text-align:center;color:#64748b;padding:20px;font-size:13px">لا نتائج للفلتر/البحث الحالي.</p>'
           : '<div style="overflow-x:auto"><table class="csv-table"><thead><tr>' +
-            '<th>#</th><th>المنشأة</th><th>السجل / البطاقة</th><th>مقدّم الفحص</th><th>المبلغ</th><th>آلي</th><th>معتمد</th><th></th>' +
+            '<th>الشركة</th><th>البطاقة الضريبية</th><th>السجل التجاري</th><th>فواتير</th><th>آلي</th><th>التصنيف</th><th></th>' +
             '</tr></thead><tbody>' +
-            recs
-              .map(function (r, i) {
-                const auto = (r.summary && r.summary.classification) || 'review';
-                const eff = effectiveClass(r);
+            list
+              .map(function (c) {
                 return (
-                  '<tr data-rec-id="' + r.id + '" style="cursor:pointer">' +
-                  '<td>' + (recs.length - i) + '</td>' +
-                  '<td><strong>' + (r.companyName || '—') + '</strong><br><small style="color:#64748b">' + (r.entityId || '') + '</small></td>' +
-                  '<td style="font-size:11px;direction:ltr;text-align:right">' +
-                  (r.crNumber ? formatCR(r.crNumber) : '—') +
-                  '<br>' +
-                  (r.taxCard ? formatTaxCard(r.taxCard) : '—') +
+                  '<tr data-co-key="' +
+                  String(c.key).replace(/"/g, '') +
+                  '" style="cursor:pointer">' +
+                  '<td><strong>' +
+                  (c.companyName || '—') +
+                  '</strong><br><small style="color:#64748b">' +
+                  (c.entityId || '') +
+                  '</small></td>' +
+                  '<td dir="ltr" style="font-size:12px">' +
+                  (c.taxCard ? formatTaxCard(c.taxCard) : '—') +
                   '</td>' +
-                  '<td>' + (r.role === 'auditor' ? 'محاسب' : 'مستثمر') + '</td>' +
-                  '<td>' + fmtMoney(r.summary && r.summary.totalAmount) + '</td>' +
-                  '<td><span class="csv-pill ' + classPill(auto) + '">' + classLabel(auto) + '</span></td>' +
-                  '<td><span class="csv-pill ' + classPill(eff) + '">' + classLabel(eff) + (r.adminClass ? ' ★' : '') + '</span></td>' +
-                  '<td><button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:11px" data-open-rec="' + r.id + '">تفاصيل</button></td>' +
+                  '<td dir="ltr" style="font-size:11px">' +
+                  (c.crNumber ? formatCR(c.crNumber) : '—') +
+                  '</td>' +
+                  '<td>' +
+                  c.invoiceCount +
+                  '</td>' +
+                  '<td><span class="csv-pill ' +
+                  classPill(c.autoClass) +
+                  '">' +
+                  classLabel(c.autoClass) +
+                  '</span></td>' +
+                  '<td>' +
+                  classSelectHtml(c.adminClass || '', c.key) +
+                  '</td>' +
+                  '<td><button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:11px" data-open-co="' +
+                  String(c.key).replace(/"/g, '&quot;') +
+                  '">فواتير</button></td>' +
                   '</tr>'
                 );
               })
@@ -1030,8 +1281,14 @@
             '</tbody></table></div>') +
       '</div>' +
       '<div id="csv-admin-detail" style="display:none"></div>' +
-      '<p class="csv-footnote">التصنيف الآلي من العيّنة · التصنيف المعتمد يمكن تعديله يدوياً من التفاصيل. امسح الجلسة بعد انتهاء العرض.</p>' +
+      '<p class="csv-footnote">القائمة المنسدلة بجانب الشركة تغيّر التصنيف المعتمد فوراً. التفاصيل تعرض كل الفواتير المرفوعة والفحص التلقائي.</p>' +
       '</div>';
+
+    host.querySelectorAll('[data-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        renderAdminMonitor({ status: btn.getAttribute('data-filter'), q: (document.getElementById('csv-admin-search') || {}).value || '' });
+      });
+    });
 
     const search = document.getElementById('csv-admin-search');
     if (search) {
@@ -1039,131 +1296,207 @@
       search.addEventListener('input', function () {
         clearTimeout(t);
         t = setTimeout(function () {
-          renderAdminMonitor(search.value);
+          renderAdminMonitor({
+            status: (document.getElementById('csv-status-filter') || {}).value || 'all',
+            q: search.value
+          });
           const s2 = document.getElementById('csv-admin-search');
           if (s2) {
             s2.focus();
             try { s2.setSelectionRange(s2.value.length, s2.value.length); } catch (_) {}
           }
-        }, 200);
+        }, 220);
       });
     }
 
     const clr = document.getElementById('csv-clear-session');
     if (clr) {
       clr.onclick = function () {
-        if (!confirm('مسح كل بيانات جلسة العرض من هذا المتصفح؟')) return;
+        if (!confirm('مسح كل بيانات جلسة العرض؟')) return;
         clearRecords();
         sessionStore.lastAnalysis = null;
         renderAdminMonitor();
-        modal('تم المسح', 'تم مسح بيانات جلسة العرض. يمكن بدء تجربة جديدة.', '🧹');
+        modal('تم المسح', 'تم مسح بيانات الجلسة. يمكن بدء تجربة جديدة.', '🧹');
       };
     }
 
-    host.querySelectorAll('[data-open-rec]').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
+    host.querySelectorAll('.csv-class-select').forEach(function (sel) {
+      sel.addEventListener('change', function (e) {
         e.stopPropagation();
-        openAdminDetail(Number(btn.getAttribute('data-open-rec')));
+        const key = sel.getAttribute('data-class-rec');
+        const val = sel.value;
+        const recs = loadRecords();
+        let changed = 0;
+        recs.forEach(function (r) {
+          const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
+          if (String(k) === String(key)) {
+            r.adminClass = val === '' ? null : val;
+            changed++;
+          }
+        });
+        saveRecords(recs);
+        renderAdminMonitor({
+          status: (document.getElementById('csv-status-filter') || {}).value || 'all',
+          q: (document.getElementById('csv-admin-search') || {}).value || ''
+        });
+        if (changed) {
+          modal('تم التصنيف', 'تم اعتماد التصنيف: <strong>' + classLabel(val || 'review') + '</strong> للمنشأة.', '✅');
+        }
       });
     });
-    host.querySelectorAll('tr[data-rec-id]').forEach(function (tr) {
+
+    host.querySelectorAll('[data-open-co]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openCompanyDetail(btn.getAttribute('data-open-co'));
+      });
+    });
+    host.querySelectorAll('tr[data-co-key]').forEach(function (tr) {
       tr.addEventListener('click', function () {
-        openAdminDetail(Number(tr.getAttribute('data-rec-id')));
+        openCompanyDetail(tr.getAttribute('data-co-key'));
       });
     });
   }
 
-  function openAdminDetail(recId) {
+  function openCompanyDetail(key) {
     const box = document.getElementById('csv-admin-detail');
     if (!box) return;
-    const rec = loadRecords().find(function (r) { return r.id === recId; });
-    if (!rec) {
+    const companies = groupCompanies(loadRecords());
+    const c = companies.find(function (x) { return String(x.key) === String(key); });
+    if (!c) {
       box.style.display = 'none';
       return;
     }
-    const auto = (rec.summary && rec.summary.classification) || 'review';
-    const eff = effectiveClass(rec);
-    const s = rec.summary || {};
+
+    const allInvoices = [];
+    c.records.forEach(function (rec) {
+      (rec.results || []).forEach(function (inv, idx) {
+        allInvoices.push({ rec: rec, inv: inv, idx: idx });
+      });
+    });
 
     box.style.display = 'block';
     box.innerHTML =
       '<div class="csv-card" style="border:2px solid #0d9488">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">' +
       '<div>' +
-      '<h3 style="margin:0 0 4px">تفاصيل المنشأة</h3>' +
-      '<div class="sub" style="margin:0">' + (rec.companyName || '—') + '</div>' +
+      '<h3 style="margin:0 0 4px">' +
+      (c.companyName || '—') +
+      '</h3>' +
+      '<div class="sub" style="margin:0">تفاصيل المنشأة والفواتير المرفوعة</div>' +
       '</div>' +
       '<button type="button" class="csv-btn csv-btn-soft" id="csv-detail-close" style="padding:6px 12px;font-size:12px">إغلاق</button>' +
       '</div>' +
       '<div class="csv-grid" style="margin-top:14px">' +
-      '<div><span class="k">رقم التعريف الرسمي</span><br><span class="v">' + (rec.entityId || '—') + '</span></div>' +
-      '<div><span class="k">مقدّم الفحص</span><br><span class="v">' + (rec.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر') + '</span></div>' +
-      '<div><span class="k">السجل التجاري الموحد</span><br><span class="v" dir="ltr">' + (rec.crNumber ? formatCR(rec.crNumber) : '—') + '</span></div>' +
-      '<div><span class="k">البطاقة الضريبية</span><br><span class="v" dir="ltr">' + (rec.taxCard ? formatTaxCard(rec.taxCard) : '—') + '</span></div>' +
-      '<div><span class="k">التصنيف الآلي</span><br><span class="csv-pill ' + classPill(auto) + '">' + classLabel(auto) + '</span></div>' +
-      '<div><span class="k">التصنيف المعتمد</span><br><span class="csv-pill ' + classPill(eff) + '">' + classLabel(eff) + (rec.adminClass ? ' (يدوي)' : ' (آلي)') + '</span></div>' +
+      '<div><span class="k">رقم التعريف</span><br><span class="v">' +
+      (c.entityId || '—') +
+      '</span></div>' +
+      '<div><span class="k">البطاقة الضريبية</span><br><span class="v" dir="ltr">' +
+      (c.taxCard ? formatTaxCard(c.taxCard) : '—') +
+      '</span></div>' +
+      '<div><span class="k">السجل التجاري الموحد</span><br><span class="v" dir="ltr">' +
+      (c.crNumber ? formatCR(c.crNumber) : '—') +
+      '</span></div>' +
+      '<div><span class="k">التصنيف المعتمد</span><br><span class="csv-pill ' +
+      classPill(c.effective) +
+      '">' +
+      classLabel(c.effective) +
+      '</span></div>' +
       '</div>' +
-      '<div class="csv-kpi" style="margin-top:14px">' +
-      '<div><div class="v">' + (s.okCount || 0) + '</div><div class="l">معاملات</div></div>' +
-      '<div><div class="v">' + (s.validCount || 0) + '</div><div class="l">صالحة</div></div>' +
-      '<div><div class="v">' + (s.matchCount || 0) + '</div><div class="l">مطابقة</div></div>' +
-      '<div><div class="v">' + fmtMoney(s.totalAmount) + '</div><div class="l">المبلغ</div></div>' +
+      '<div style="margin-top:14px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px">' +
+      '<div style="font-weight:700;font-size:13px;margin-bottom:8px">تعديل التصنيف</div>' +
+      classSelectHtml(c.adminClass || '', c.key).replace('csv-class-select', 'csv-class-select csv-detail-class') +
       '</div>' +
-      '<p style="font-size:13px;color:#374151;margin:12px 0;line-height:1.6">' + (s.reason || '') + '</p>' +
-      '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px;margin-top:8px">' +
-      '<div style="font-weight:700;font-size:13px;margin-bottom:10px">تصنيف الأدمن اليدوي</div>' +
-      '<div class="csv-actions">' +
-      '<button type="button" class="csv-btn" style="background:#059669;color:#fff" data-set-class="strong">تصنيف: جادة</button>' +
-      '<button type="button" class="csv-btn" style="background:#dc2626;color:#fff" data-set-class="weak">تصنيف: غير جادة</button>' +
-      '<button type="button" class="csv-btn csv-btn-soft" data-set-class="review">تحتاج مراجعة</button>' +
-      '<button type="button" class="csv-btn csv-btn-soft" data-set-class="">إعادة للآلي فقط</button>' +
-      '</div>' +
-      '</div>' +
-      (rec.results && rec.results.length
-        ? '<div style="margin-top:14px"><div style="font-weight:700;font-size:13px;margin-bottom:8px">المعاملات في العيّنة</div>' +
-          rec.results
-            .map(function (x, i) {
-              if (!x.ok) return '<div class="csv-inv">معاملة ' + (i + 1) + ' — تعذّر الاستخلاص</div>';
-              const d = x.data || {};
+      '<div style="margin-top:16px">' +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px">الفواتير المرفوعة والفحص التلقائي (' +
+      allInvoices.length +
+      ')</div>' +
+      (allInvoices.length === 0
+        ? '<p style="color:#64748b;font-size:13px">لا توجد فواتير في السجل.</p>'
+        : allInvoices
+            .map(function (item, i) {
+              const inv = item.inv;
+              const rec = item.rec;
+              if (!inv.ok) {
+                return (
+                  '<div class="csv-inv"><strong>فاتورة ' +
+                  (i + 1) +
+                  '</strong> · <span class="csv-st csv-st-wa">تعذّر الاستخلاص</span>' +
+                  '<div style="font-size:11px;color:#64748b;margin-top:4px">مصدر الفحص: ' +
+                  (rec.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر') +
+                  ' · ' +
+                  new Date(rec.at).toLocaleString('ar-EG') +
+                  '</div></div>'
+                );
+              }
+              const d = inv.data || {};
+              const match =
+                rec.entityId &&
+                (d.issuer && d.issuer.id === rec.entityId || d.receiver && d.receiver.id === rec.entityId);
               return (
                 '<div class="csv-inv">' +
-                '<strong>معاملة ' + (i + 1) + ' — ' + (x.side || '') + '</strong> · ' +
-                (d.status || '') +
-                '<br><span style="font-size:12px">' +
-                ((d.issuer && d.issuer.name) || '') +
-                ' → ' +
-                ((d.receiver && d.receiver.name) || '') +
+                '<div class="hd">' +
+                '<div><strong>فاتورة ' +
+                (i + 1) +
+                ' — ' +
+                (inv.side || '') +
+                '</strong>' +
+                '<div style="font-size:11px;color:#64748b">' +
+                ((d.dateTimeIssued || '').slice(0, 10) || '') +
+                ' · فحص: ' +
+                (rec.role === 'auditor' ? 'محاسب' : 'مستثمر') +
+                '</div></div>' +
+                '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                '<span class="csv-st ' +
+                (d.status === 'Valid' ? 'csv-st-ok' : 'csv-st-no') +
+                '">' +
+                (d.status || '—') +
                 '</span>' +
-                '<div style="font-weight:800;margin-top:4px">' + fmtMoney(d.totalAmount) + '</div></div>'
+                '<span class="csv-st ' +
+                (match ? 'csv-st-ok' : 'csv-st-no') +
+                '">' +
+                (match ? 'مطابق للهوية' : 'غير مطابق') +
+                '</span>' +
+                '</div></div>' +
+                '<div class="csv-grid">' +
+                '<div><span class="k">المصدر</span><br><span class="v">' +
+                ((d.issuer && d.issuer.name) || '—') +
+                '</span></div>' +
+                '<div><span class="k">المستلم</span><br><span class="v">' +
+                ((d.receiver && d.receiver.name) || '—') +
+                '</span></div>' +
+                '</div>' +
+                '<div style="margin-top:8px;font-weight:800">' +
+                fmtMoney(d.totalAmount) +
+                '</div></div>'
               );
             })
-            .join('') +
-          '</div>'
-        : '') +
-      '</div>';
+            .join('')) +
+      '</div></div>';
 
     box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('csv-detail-close').onclick = function () {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    };
 
-    const closeBtn = document.getElementById('csv-detail-close');
-    if (closeBtn) closeBtn.onclick = function () { box.style.display = 'none'; box.innerHTML = ''; };
-
-    box.querySelectorAll('[data-set-class]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const val = btn.getAttribute('data-set-class');
-        const list = loadRecords();
-        const idx = list.findIndex(function (r) { return r.id === recId; });
-        if (idx < 0) return;
-        list[idx].adminClass = val === '' ? null : val;
-        saveRecords(list);
-        renderAdminMonitor((document.getElementById('csv-admin-search') || {}).value || '');
-        openAdminDetail(recId);
-        modal(
-          'تم تحديث التصنيف',
-          'التصنيف المعتمد للمنشأة: <strong>' + classLabel(effectiveClass(list[idx])) + '</strong>',
-          '✅'
-        );
+    const dsel = box.querySelector('.csv-detail-class');
+    if (dsel) {
+      dsel.addEventListener('change', function () {
+        const val = dsel.value;
+        const recs = loadRecords();
+        recs.forEach(function (r) {
+          const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
+          if (String(k) === String(key)) r.adminClass = val === '' ? null : val;
+        });
+        saveRecords(recs);
+        renderAdminMonitor({
+          status: (document.getElementById('csv-status-filter') || {}).value || 'all',
+          q: (document.getElementById('csv-admin-search') || {}).value || ''
+        });
+        openCompanyDetail(key);
       });
-    });
+    }
   }
 
   function initPortalSection(forcedRole) {
