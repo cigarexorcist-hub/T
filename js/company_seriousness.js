@@ -1003,7 +1003,7 @@
         saveRecords(list);
 
         const isAuditor = sessionStore.role === 'auditor';
-        const who = isAuditor ? 'السيد/ المحاسب القانوني المحترم' : 'السيد/ المستثمر المحترم';
+        const who = isAuditor ? 'السيد/ المحاسب القانوني ' : 'السيد/ المستثمر ';
         const formalMsg =
           '<div style="text-align:right;line-height:1.85;font-size:13px">' +
           '<strong>' + who + '</strong><br><br>' +
@@ -1048,15 +1048,15 @@
         <h3>① بيانات المنشأة محل الفحص</h3>
         <div class="sub">أدخل بيانات المنشأة الرسمية — أساس مطابقة العيّنة</div>
         <div class="csv-field">
-          <label>اسم المنشأة</label>
+          <label>اسم المنشأة/الشركة</label>
           <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
         </div>
         <div class="csv-field">
-          <label>رقم التعريف الرسمي للمنشأة <span style="color:#dc2626">*</span></label>
+          <label>رقم البطاقة الضريبية للمنشأة/الشركة <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="483893145" maxlength="15" inputmode="numeric">
         </div>
         <div class="csv-field">
-          <label>رقم السجل التجاري الموحد <span style="color:#64748b;font-weight:400">(15 رقم · ثلاث مجموعات)</span></label>
+          <label>رقم السجل التجاري الموحد <span style="color:#64748b;font-weight:400">(15 رقم· )</span></label>
           <input type="text" id="csv-cr-number" placeholder="12345-67890-12345" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field">
@@ -1070,8 +1070,8 @@
       </div>
 
       <div class="csv-card">
-        <h3>② روابط إثبات المعاملات</h3>
-        <div class="sub">يُقبل حصراً الرابط الرسمي للمشاركة من منظومة التوثيق الحكومي للمعاملات</div>
+        <h3>② روابط الفواتير الالكترونية</h3>
+        <div class="sub">يُقبل حصراً الرابط الرسمي للمشاركة </div>
         <div class="csv-hint">
           للعرض السريع: اضغط «رابط تجريبي» لاستخدام معاملة حقيقية موثقة، أو الصق روابطك بشرط أن تبدأ بـ
           <code dir="ltr" style="background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:11px">https://invoicing.eta.gov.eg</code>
@@ -1082,12 +1082,12 @@
         </div>
         <div class="csv-links">
           <div class="csv-linkbox">
-            <h4><span class="csv-tag in">وارد</span> معاملات واردة (حتى 5)</h4>
+            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة (حتى 5)</h4>
             <div id="csv-links-in"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in">＋ رابط تجريبي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">صادر</span> معاملات صادرة (حتى 5)</h4>
+            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة (حتى 5)</h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out">＋ رابط تجريبي</button>
           </div>
