@@ -725,7 +725,7 @@
         'لم يُستخرج أي فاتورة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
     } else if (hasFraud && matchCount === 0) {
       classification = 'weak';
-      label = 'مؤشرات تدليس / عدم اتساق';
+      label = 'مؤشرات عدم اتساق';
       reason =
         'اكتُشفت حالات عدم تطابق في اسم المنشأة أو رقم التسجيل (البطاقة الضريبية) أو طرف الفاتورة. العيّنة لا تدعم إثبات الجدية وقد تشير إلى محاولة تدليس.';
     } else if (target && matchCount === 0) {
@@ -1496,7 +1496,7 @@
 
     const fraudSummaryHtml =
       s.fraudFlags && s.fraudFlags.length
-        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات تدليس / عدم اتساق (' +
+        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات عدم اتساق (' +
           s.fraudFlags.length +
           '):</strong><ul style="margin:6px 0 0 0;padding-right:18px">' +
           s.fraudFlags
@@ -1800,7 +1800,7 @@
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة</h4>
+            <h4><span class="csv-tag out">مبيعات</span> فواتير مبيعات</h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
