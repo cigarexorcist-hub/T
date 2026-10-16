@@ -37,8 +37,12 @@
     },
     invoiceLines: [
       {
-        description: 'Car rental Fees from 26-09-2026 to 25-10-2026',
+        description: 'Car rental Fees from 26-09-2026 to 25-10-2026 King Long ن م د 391',
         itemCode: 'EG-483893145-CR',
+        itemPrimaryName: 'car rental',
+        itemSecondaryName: 'تأجير سيارة',
+        itemPrimaryDescription: 'car rental',
+        itemSecondaryDescription: 'تأجير سيارة',
         quantity: 1,
         salesTotal: 22000
       }
@@ -128,31 +132,150 @@
     return parts.length ? parts.join('، ') : '—';
   }
 
+  /** تطبيع سطور الفاتورة من استجابة الهيئة (أسماء حقول متعددة) */
+  function normalizeInvoiceLines(d) {
+    if (!d || typeof d !== 'object') return [];
+    const raw =
+      d.invoiceLines ||
+      d.documentLines ||
+      d.lines ||
+      d.items ||
+      (d.data && (d.data.invoiceLines || d.data.documentLines)) ||
+      [];
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(function (ln) {
+        if (!ln || typeof ln !== 'object') return null;
+        const itemCode = ln.itemCode || ln.code || ln.gs1Code || ln.internalCode || '';
+        const primaryName = ln.itemPrimaryName || ln.primaryName || ln.nameEn || ln.name || '';
+        const secondaryName =
+          ln.itemSecondaryName || ln.secondaryName || ln.nameAr || ln.arabicName || '';
+        const description =
+          ln.description ||
+          ln.itemPrimaryDescription ||
+          ln.itemSecondaryDescription ||
+          ln.itemDescription ||
+          '';
+        const quantity = ln.quantity != null ? ln.quantity : ln.qty != null ? ln.qty : null;
+        const salesTotal =
+          ln.salesTotal != null
+            ? ln.salesTotal
+            : ln.netTotal != null
+              ? ln.netTotal
+              : ln.total != null
+                ? ln.total
+                : ln.amount != null
+                  ? ln.amount
+                  : null;
+        return {
+          itemCode: itemCode,
+          itemPrimaryName: primaryName,
+          itemSecondaryName: secondaryName,
+          description: description,
+          itemPrimaryDescription: ln.itemPrimaryDescription || '',
+          itemSecondaryDescription: ln.itemSecondaryDescription || '',
+          quantity: quantity,
+          salesTotal: salesTotal
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /** تنسيق تاريخ إصدار الفاتورة للعرض */
+  function formatInvoiceDate(iso) {
+    if (!iso) return '—';
+    const s = String(iso).trim();
+    const day = s.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return s.slice(0, 16) || '—';
+    try {
+      const d = new Date(day + 'T12:00:00Z');
+      if (isNaN(d.getTime())) return day;
+      return d.toLocaleDateString('ar-EG', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (_) {
+      return day;
+    }
+  }
+
+  function invoiceDateRaw(d) {
+    if (!d) return '';
+    const raw = d.dateTimeIssued || d.dateTimeRecevied || d.issueDate || '';
+    return String(raw).slice(0, 10);
+  }
+
   function itemLinesHtml(d) {
-    const lines = (d && d.invoiceLines) || [];
+    const lines = normalizeInvoiceLines(d);
     if (!lines.length) {
-      return '<div style="font-size:12px;color:#64748b;margin-top:6px">لا توجد أصناف مسجّلة</div>';
+      return '<div style="font-size:12px;color:#64748b;margin-top:6px">لا توجد أصناف مسجّلة في الفاتورة</div>';
     }
     return (
       '<div style="margin-top:8px;font-size:12px">' +
       '<div style="font-weight:700;color:#64748b;margin-bottom:4px">الأصناف (اسم الكود)</div>' +
-      lines.map(function (ln) {
-        const codeName = ln.itemPrimaryName || ln.itemSecondaryName || ln.itemCode || '—';
-        const desc = ln.description || ln.itemPrimaryDescription || ln.itemSecondaryDescription || '';
-        const qty = ln.quantity != null ? ln.quantity : '';
-        const amt = ln.salesTotal != null ? fmtMoney(ln.salesTotal) : '';
-        return (
-          '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin-bottom:4px">' +
-          '<strong>' + codeName + '</strong>' +
-          (ln.itemCode ? ' <span style="color:#64748b;font-size:11px">(' + ln.itemCode + ')</span>' : '') +
-          (desc ? '<div style="color:#475569;margin-top:2px">' + desc + '</div>' : '') +
-          '<div style="margin-top:2px;color:#64748b">' +
-          (qty !== '' ? 'الكمية: ' + qty : '') +
-          (qty !== '' && amt ? ' · ' : '') +
-          (amt ? 'المبلغ: ' + amt : '') +
-          '</div></div>'
-        );
-      }).join('') +
+      lines
+        .map(function (ln) {
+          const arName = (ln.itemSecondaryName && String(ln.itemSecondaryName).trim()) || '';
+          const enName = (ln.itemPrimaryName && String(ln.itemPrimaryName).trim()) || '';
+          const code = (ln.itemCode && String(ln.itemCode).trim()) || '';
+          const desc =
+            (ln.description && String(ln.description).trim()) ||
+            (ln.itemPrimaryDescription && String(ln.itemPrimaryDescription).trim()) ||
+            (ln.itemSecondaryDescription && String(ln.itemSecondaryDescription).trim()) ||
+            '';
+          // لا تكرار الوصف إذا كان مطابقاً لاسم الصنف
+          const descClean =
+            desc &&
+            desc !== arName &&
+            desc !== enName &&
+            desc.toLowerCase() !== enName.toLowerCase()
+              ? desc
+              : desc && !arName && !enName
+                ? desc
+                : desc && desc.length > Math.max(arName.length, enName.length) + 5
+                  ? desc
+                  : desc === arName || desc === enName
+                    ? ''
+                    : desc;
+          const qty = ln.quantity != null ? ln.quantity : '';
+          const amt = ln.salesTotal != null ? fmtMoney(ln.salesTotal) : '';
+
+          // سطر الاسم: عربي · إنجليزي (كود)
+          let titleParts = [];
+          if (arName) titleParts.push('<strong style="color:#0b1f3a">' + arName + '</strong>');
+          if (enName && enName.toLowerCase() !== arName.toLowerCase()) {
+            titleParts.push(
+              '<span style="color:#334155">' + enName + '</span>'
+            );
+          }
+          if (!arName && !enName && code) {
+            titleParts.push('<strong style="color:#0b1f3a">' + code + '</strong>');
+          }
+          const codeSpan = code
+            ? ' <span style="color:#64748b;font-size:11px;direction:ltr;unicode-bidi:embed">(' +
+              code +
+              ')</span>'
+            : '';
+          if (!titleParts.length) titleParts.push('<strong>—</strong>');
+
+          return (
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;margin-bottom:4px">' +
+            '<div>' +
+            titleParts.join(' <span style="color:#94a3b8">·</span> ') +
+            codeSpan +
+            '</div>' +
+            (descClean
+              ? '<div style="color:#475569;margin-top:2px;line-height:1.45">' + descClean + '</div>'
+              : '') +
+            '<div style="margin-top:2px;color:#64748b">' +
+            (qty !== '' ? 'الكمية: ' + qty : '') +
+            (qty !== '' && amt ? ' · ' : '') +
+            (amt ? 'المبلغ: ' + amt : '') +
+            '</div></div>'
+          );
+        })
+        .join('') +
       '</div>'
     );
   }
@@ -221,6 +344,42 @@
     );
   }
 
+  /** أسباب عدم الجدية (عند اختيار «غير جادة») — لتقييم موضوعي من الأدمن */
+  const WEAK_REASON_OPTIONS = [
+    ['', '— اختر سبب عدم الجدية —'],
+    ['address_mismatch', 'عدم تطابق عنوان الشركة'],
+    ['items_outside_activity', 'الأصناف خارج النشاط المصرح به من الهيئة'],
+    ['invoice_values_not_serious', 'قيم الفواتير لا تعبر عن جدية النشاط'],
+    ['insignificant_quantities', 'الكميات ضئيلة'],
+    ['no_current_year_invoices', 'لا يوجد فواتير عن العام الحالي'],
+    ['identity_mismatch', 'عدم تطابق هوية المنشأة مع المعاملات'],
+    ['invalid_or_cancelled', 'معاملات غير صالحة أو ملغاة بنسبة مرتفعة'],
+    ['insufficient_sample', 'عيّنة غير كافية لإثبات الجدية'],
+    ['other', 'أخرى']
+  ];
+
+  function weakReasonLabel(code) {
+    for (let i = 0; i < WEAK_REASON_OPTIONS.length; i++) {
+      if (WEAK_REASON_OPTIONS[i][0] === code) return WEAK_REASON_OPTIONS[i][1];
+    }
+    return code || '—';
+  }
+
+  function weakReasonSelectHtml(current, recId, extraClass) {
+    return (
+      '<select class="csv-weak-reason-select' +
+      (extraClass ? ' ' + extraClass : '') +
+      '" data-reason-rec="' +
+      recId +
+      '" onclick="event.stopPropagation()" style="font-family:inherit;font-size:11px;padding:4px 6px;border-radius:8px;border:1.5px solid #fecaca;background:#fff7f7;max-width:260px;margin-top:4px;display:block">' +
+      WEAK_REASON_OPTIONS.map(function (o) {
+        const sel = current === o[0] ? ' selected' : '';
+        return '<option value="' + o[0] + '"' + sel + '>' + o[1] + '</option>';
+      }).join('') +
+      '</select>'
+    );
+  }
+
   /** تجميع السجلات حسب المنشأة */
   function groupCompanies(records) {
     const map = {};
@@ -235,6 +394,7 @@
           taxCard: r.taxCard || '',
           records: [],
           adminClass: null,
+          adminReason: null,
           lastAt: r.at
         };
       }
@@ -246,6 +406,7 @@
       if (r.entityId) g.entityId = r.entityId;
       // آخر تصنيف يدوي غير فارغ يسود
       if (r.adminClass) g.adminClass = r.adminClass;
+      if (r.adminReason) g.adminReason = r.adminReason;
       if (r.at && (!g.lastAt || r.at > g.lastAt)) g.lastAt = r.at;
     });
     return Object.keys(map).map(function (k) {
@@ -256,6 +417,7 @@
       })[0];
       g.autoClass = (latest && latest.summary && latest.summary.classification) || 'review';
       g.effective = g.adminClass || g.autoClass;
+      if (g.effective !== 'weak') g.adminReason = null;
       g.totalAmount = g.records.reduce(function (s, r) {
         return s + ((r.summary && r.summary.totalAmount) || 0);
       }, 0);
@@ -274,6 +436,43 @@
     } catch {
       return false;
     }
+  }
+
+  /** رسالة احترافية توضح سبب رفض الرابط (لتجنب ظن وجود خلل بالموقع) */
+  function explainInvalidEtaLink(url) {
+    const val = String(url || '').trim();
+    let detail =
+      'يُقبل فقط <strong>رابط المشاركة الرسمية</strong> لفاتورة إلكترونية من منظومة الفواتير الإلكترونية التابعة لمصلحة الضرائب.';
+    if (!val) {
+      detail = 'الحقل فارغ. يُرجى لصق رابط مشاركة فاتورة صالح.';
+    } else if (!/^https?:\/\//i.test(val)) {
+      detail =
+        'النص المُدخل ليس رابطاً كاملاً. يجب أن يبدأ بـ <code dir="ltr">https://</code>';
+    } else {
+      try {
+        const u = new URL(val);
+        if (u.origin !== ETA_ORIGIN) {
+          detail =
+            'النطاق غير مقبول.<br>المُدخل: <code dir="ltr" style="word-break:break-all">' +
+            u.origin +
+            '</code><br>المطلوب حصراً: <strong dir="ltr">https://invoicing.eta.gov.eg</strong>';
+        } else if (!ETA_PATH_RE.test(val)) {
+          detail =
+            'الرابط من النطاق الصحيح لكن <strong>مساره غير مكتمل</strong>.<br>الصيغة المطلوبة:<br><code dir="ltr" style="font-size:11px;word-break:break-all">https://invoicing.eta.gov.eg/documents/…/share/…</code>';
+        }
+      } catch (_) {
+        detail = 'تعذّر قراءة الرابط. تأكد من نسخه كاملاً دون حذف أي جزء منه.';
+      }
+    }
+    return (
+      '<div style="text-align:right;line-height:1.75">' +
+      '<p style="margin:0 0 10px">هذا <strong>ليس خللاً في الموقع</strong> — الرابط المُدخل لا يستوفي شروط الإثبات الرسمي.</p>' +
+      '<p style="margin:0 0 10px">' +
+      detail +
+      '</p>' +
+      '<p style="margin:0;font-size:12px;color:#64748b">يمكنك: لصق رابط المشاركة من بوابة الفاتورة الإلكترونية، أو مسح رمز QR الظاهر على الفاتورة باستخدام زر الكاميرا.</p>' +
+      '</div>'
+    );
   }
 
   function parseShareUrl(url) {
@@ -313,10 +512,24 @@
         address: { governate: 'Giza', regionCity: '—' }
       },
       invoiceLines: [
-        { description: 'بند معاملة', quantity: 1, salesTotal: amount }
+        {
+          description: 'بند معاملة تجريبي',
+          itemCode: 'EG-' + taxA + '-ITM',
+          itemPrimaryName: 'Demo item',
+          itemSecondaryName: 'صنف تجريبي',
+          quantity: 1,
+          salesTotal: amount
+        }
       ],
       documentTypeNameSecondaryLang: 'معاملة موثقة'
     };
+  }
+
+  function ensureInvoiceLinesOnData(data) {
+    if (!data || typeof data !== 'object') return data;
+    const lines = normalizeInvoiceLines(data);
+    data.invoiceLines = lines;
+    return data;
   }
 
   async function fetchDocument(url) {
@@ -333,7 +546,7 @@
       });
       clearTimeout(timer);
       if (res.ok) {
-        const data = await res.json();
+        const data = ensureInvoiceLinesOnData(await res.json());
         return { source: 'live', data, url };
       }
     } catch (_) {
@@ -341,9 +554,13 @@
     }
 
     if (parts.uuid === DEMO_PAYLOAD.uuid || url === DEMO_LINK) {
-      return { source: 'demo', data: { ...DEMO_PAYLOAD }, url };
+      return { source: 'demo', data: ensureInvoiceLinesOnData({ ...DEMO_PAYLOAD }), url };
     }
-    return { source: 'demo', data: synthesizeFromUuid(parts.uuid), url };
+    return {
+      source: 'demo',
+      data: ensureInvoiceLinesOnData(synthesizeFromUuid(parts.uuid)),
+      url
+    };
   }
 
   function analyzeResults(targetId, items) {
@@ -695,7 +912,7 @@
         type +
         '" data-idx="' +
         i +
-        '" placeholder="https://invoicing.eta.gov.eg/documents/.../share/..." spellcheck="false" autocomplete="off">' +
+        '" placeholder="الصق رابط المشاركة هنا…" spellcheck="false" autocomplete="off">' +
         '<button type="button" class="csv-qr-btn" title="مسح رمز QR للفاتورة" data-qr-for="' +
         type +
         '-' +
@@ -721,11 +938,8 @@
         st.textContent = good ? '✓' : '✗';
         if (!good) {
           punish();
-          modal(
-            'رابط غير مقبول',
-            'يُقبل فقط رابط الإثبات الرسمي من النطاق:<br><strong dir="ltr">https://invoicing.eta.gov.eg</strong><br><br>أي رابط آخر يُرفض فوراً لحماية المنصة.',
-            '🚫'
-          );
+          const reasonHtml = explainInvalidEtaLink(val);
+          modal('رابط غير مقبول', reasonHtml, '🚫');
           setTimeout(function () {
             if (input.classList.contains('bad')) {
               input.value = '';
@@ -934,11 +1148,7 @@
     for (const item of all) {
       if (!isValidEtaLink(item.url)) {
         punish();
-        modal(
-          'رابط غير مقبول',
-          'جميع الروابط يجب أن تكون من النطاق الرسمي فقط.',
-          '🚫'
-        );
+        modal('رابط غير مقبول', explainInvalidEtaLink(item.url), '🚫');
         return;
       }
     }
@@ -1014,12 +1224,14 @@
               analysis.entityId &&
               (d.issuer?.id === analysis.entityId ||
                 d.receiver?.id === analysis.entityId);
+            const invDate = formatInvoiceDate(d.dateTimeIssued || d.dateTimeRecevied);
+            const invDateRaw = invoiceDateRaw(d);
             return `<div class="csv-inv">
               <div class="hd">
                 <div><strong>معاملة ${i + 1} — ${r.side}</strong>
-                  <div style="font-size:11px;color:#64748b">${d.documentTypeNameSecondaryLang || 'معاملة'} · ${ (d.dateTimeIssued || '').slice(0,10) }</div>
+                  <div style="font-size:11px;color:#64748b">${d.documentTypeNameSecondaryLang || 'معاملة'} · تاريخ الإصدار: <strong style="color:#0b1f3a">${invDate}</strong>${invDateRaw ? ' <span dir="ltr">(' + invDateRaw + ')</span>' : ''}</div>
                 </div>
-                <div style="display:flex;gap:6px">
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
                   <span class="csv-st ${match ? 'csv-st-ok' : 'csv-st-no'}">${match ? 'مطابق للهوية' : 'غير مطابق'}</span>
                   <span class="csv-st ${d.status === 'Valid' ? 'csv-st-ok' : 'csv-st-no'}">${d.status || '—'}</span>
                 </div>
@@ -1029,7 +1241,10 @@
                 <div><span class="k">الطرف المستلم</span><br><span class="v">${d.receiver?.name || '—'}</span><br><small style="color:#64748b">${d.receiver?.id || ''}</small><br><small style="color:#64748b;line-height:1.4">${formatAddress(d.receiver?.address)}</small></div>
               </div>
               ${itemLinesHtml(d)}
-              <div style="margin-top:10px;font-weight:800;font-size:1.05rem">${fmtMoney(d.totalAmount)}</div>
+              <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div style="font-size:12px;color:#64748b">📅 تاريخ استخلاص/إصدار الفاتورة: <strong style="color:#0b1f3a">${invDate}</strong></div>
+                <div style="font-weight:800;font-size:1.05rem">${fmtMoney(d.totalAmount)}</div>
+              </div>
             </div>`;
           })
           .join('')}
@@ -1120,10 +1335,33 @@
 
       <div class="csv-card">
         <h3>② روابط الفواتير الالكترونية</h3>
-        <div class="sub">يُقبل حصراً الرابط الرسمي للمشاركة </div>
-        <div class="csv-hint">
-          للعرض السريع: اضغط «رابط تجريبي» لاستخدام معاملة حقيقية موثقة، أو الصق روابطك بشرط أن تبدأ بـ
-          <code dir="ltr" style="background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:11px">https://invoicing.eta.gov.eg</code>
+        <div class="sub">يُقبل حصراً رابط المشاركة الرسمية من منظومة الفواتير الإلكترونية</div>
+        <div class="csv-qr-guide" style="display:flex;gap:14px;align-items:flex-start;background:linear-gradient(135deg,#f0f9ff 0%,#ecfdf5 100%);border:1.5px solid #bae6fd;border-radius:12px;padding:14px 16px;margin:12px 0 14px">
+          <div style="flex-shrink:0;width:56px;height:56px;background:#fff;border-radius:10px;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(11,31,58,.06)" aria-hidden="true">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="14" height="14" rx="2" stroke="#0f766e" stroke-width="2"/>
+              <rect x="6" y="6" width="8" height="8" fill="#0f766e"/>
+              <rect x="23" y="3" width="14" height="14" rx="2" stroke="#0f766e" stroke-width="2"/>
+              <rect x="26" y="6" width="8" height="8" fill="#0f766e"/>
+              <rect x="3" y="23" width="14" height="14" rx="2" stroke="#0f766e" stroke-width="2"/>
+              <rect x="6" y="26" width="8" height="8" fill="#0f766e"/>
+              <rect x="23" y="23" width="4" height="4" fill="#0f766e"/>
+              <rect x="29" y="23" width="4" height="4" fill="#0f766e"/>
+              <rect x="35" y="23" width="2" height="4" fill="#0f766e"/>
+              <rect x="23" y="29" width="4" height="4" fill="#0f766e"/>
+              <rect x="31" y="29" width="6" height="2" fill="#0f766e"/>
+              <rect x="23" y="35" width="6" height="2" fill="#0f766e"/>
+              <rect x="31" y="33" width="6" height="4" fill="#0f766e"/>
+            </svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;color:#0b1f3a;font-size:13px;margin-bottom:4px">كيف تُضيف الفاتورة؟</div>
+            <p style="margin:0;font-size:12.5px;color:#334155;line-height:1.7">
+              يمكنك <strong>لصق رابط المشاركة</strong> مباشرة في الحقل، أو الضغط على زر الكاميرا <strong>📷</strong> لـ<strong>مسح رمز QR</strong> الظاهر على الفاتورة الإلكترونية.
+              يُقبل فقط الرابط الذي يبدأ بـ
+              <code dir="ltr" style="background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:11px">https://invoicing.eta.gov.eg/documents/…/share/…</code>
+            </p>
+          </div>
         </div>
         <div class="csv-attempts" id="csv-attempts">
           <span>محاولات الروابط المرفوضة المتبقية: <strong id="csv-attempts-left">5</strong></span>
@@ -1131,12 +1369,12 @@
         </div>
         <div class="csv-links">
           <div class="csv-linkbox">
-            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة (الصق الرابط او عمل مسح لرمز الفاتورة (QR code))</h4>
+            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة</h4>
             <div id="csv-links-in"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in">＋ رابط تجريبي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة (الصق الرابط او عمل مسح لرمز الفاتورة)(QR Code )</h4>
+            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة</h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out">＋ رابط تجريبي</button>
           </div>
@@ -1318,6 +1556,14 @@
                   '</span></td>' +
                   '<td>' +
                   classSelectHtml(c.adminClass || '', c.key) +
+                  (c.effective === 'weak'
+                    ? weakReasonSelectHtml(c.adminReason || '', c.key)
+                    : '') +
+                  (c.effective === 'weak' && c.adminReason
+                    ? '<div style="font-size:10px;color:#b91c1c;margin-top:3px">' +
+                      weakReasonLabel(c.adminReason) +
+                      '</div>'
+                    : '') +
                   '</td>' +
                   '<td><button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:11px" data-open-co="' +
                   String(c.key).replace(/"/g, '&quot;') +
@@ -1379,6 +1625,7 @@
           const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
           if (String(k) === String(key)) {
             r.adminClass = val === '' ? null : val;
+            if (val !== 'weak') r.adminReason = null;
             changed++;
           }
         });
@@ -1388,7 +1635,43 @@
           q: (document.getElementById('csv-admin-search') || {}).value || ''
         });
         if (changed) {
-          modal('تم التصنيف', 'تم اعتماد التصنيف: <strong>' + classLabel(val || 'review') + '</strong> للمنشأة.', '✅');
+          var msg =
+            'تم اعتماد التصنيف: <strong>' + classLabel(val || 'review') + '</strong> للمنشأة.';
+          if (val === 'weak') {
+            msg +=
+              '<br><small style="color:#b91c1c">اختر سبب عدم الجدية من القائمة المنسدلة.</small>';
+          }
+          modal('تم التصنيف', msg, '✅');
+        }
+      });
+    });
+
+    host.querySelectorAll('.csv-weak-reason-select').forEach(function (sel) {
+      sel.addEventListener('change', function (e) {
+        e.stopPropagation();
+        const key = sel.getAttribute('data-reason-rec');
+        const val = sel.value;
+        const recs = loadRecords();
+        let changed = 0;
+        recs.forEach(function (r) {
+          const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
+          if (String(k) === String(key)) {
+            r.adminReason = val === '' ? null : val;
+            if (!r.adminClass) r.adminClass = 'weak';
+            changed++;
+          }
+        });
+        saveRecords(recs);
+        renderAdminMonitor({
+          status: (document.getElementById('csv-status-filter') || {}).value || 'all',
+          q: (document.getElementById('csv-admin-search') || {}).value || ''
+        });
+        if (changed && val) {
+          modal(
+            'سبب عدم الجدية',
+            'تم تسجيل السبب: <strong>' + weakReasonLabel(val) + '</strong>',
+            '✅'
+          );
         }
       });
     });
@@ -1449,11 +1732,25 @@
       classPill(c.effective) +
       '">' +
       classLabel(c.effective) +
-      '</span></div>' +
+      '</span>' +
+      (c.effective === 'weak' && c.adminReason
+        ? '<div style="font-size:11px;color:#b91c1c;margin-top:4px">' +
+          weakReasonLabel(c.adminReason) +
+          '</div>'
+        : '') +
+      '</div>' +
       '</div>' +
       '<div style="margin-top:14px;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px">' +
       '<div style="font-weight:700;font-size:13px;margin-bottom:8px">تعديل التصنيف</div>' +
-      classSelectHtml(c.adminClass || '', c.key).replace('csv-class-select', 'csv-class-select csv-detail-class') +
+      classSelectHtml(c.adminClass || '', c.key).replace(
+        'csv-class-select',
+        'csv-class-select csv-detail-class'
+      ) +
+      (c.effective === 'weak' || c.adminClass === 'weak'
+        ? '<div style="margin-top:10px"><div style="font-size:12px;font-weight:600;color:#b91c1c;margin-bottom:4px">سبب عدم الجدية</div>' +
+          weakReasonSelectHtml(c.adminReason || '', c.key, 'csv-detail-reason') +
+          '</div>'
+        : '') +
       '</div>' +
       '<div style="margin-top:16px">' +
       '<div style="font-weight:700;font-size:14px;margin-bottom:10px">الفواتير المرفوعة والفحص التلقائي (' +
@@ -1480,7 +1777,10 @@
               const d = inv.data || {};
               const match =
                 rec.entityId &&
-                (d.issuer && d.issuer.id === rec.entityId || d.receiver && d.receiver.id === rec.entityId);
+                ((d.issuer && d.issuer.id === rec.entityId) ||
+                  (d.receiver && d.receiver.id === rec.entityId));
+              const invDate = formatInvoiceDate(d.dateTimeIssued || d.dateTimeRecevied);
+              const invDateRaw = invoiceDateRaw(d);
               return (
                 '<div class="csv-inv">' +
                 '<div class="hd">' +
@@ -1489,10 +1789,14 @@
                 ' — ' +
                 (inv.side || '') +
                 '</strong>' +
-                '<div style="font-size:11px;color:#64748b">' +
-                ((d.dateTimeIssued || '').slice(0, 10) || '') +
+                '<div style="font-size:11px;color:#64748b">📅 تاريخ الإصدار: <strong style="color:#0b1f3a">' +
+                invDate +
+                '</strong>' +
+                (invDateRaw ? ' <span dir="ltr">(' + invDateRaw + ')</span>' : '') +
                 ' · فحص: ' +
                 (rec.role === 'auditor' ? 'محاسب' : 'مستثمر') +
+                ' · ' +
+                new Date(rec.at).toLocaleString('ar-EG') +
                 '</div></div>' +
                 '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
                 '<span class="csv-st ' +
@@ -1523,9 +1827,13 @@
                 '</small></div>' +
                 '</div>' +
                 itemLinesHtml(d) +
-                '<div style="margin-top:8px;font-weight:800">' +
+                '<div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' +
+                '<div style="font-size:12px;color:#64748b">📅 تاريخ استخلاص الفاتورة: <strong style="color:#0b1f3a">' +
+                invDate +
+                '</strong></div>' +
+                '<div style="font-weight:800">' +
                 fmtMoney(d.totalAmount) +
-                '</div></div>'
+                '</div></div></div>'
               );
             })
             .join('')) +
@@ -1544,7 +1852,31 @@
         const recs = loadRecords();
         recs.forEach(function (r) {
           const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
-          if (String(k) === String(key)) r.adminClass = val === '' ? null : val;
+          if (String(k) === String(key)) {
+            r.adminClass = val === '' ? null : val;
+            if (val !== 'weak') r.adminReason = null;
+          }
+        });
+        saveRecords(recs);
+        renderAdminMonitor({
+          status: (document.getElementById('csv-status-filter') || {}).value || 'all',
+          q: (document.getElementById('csv-admin-search') || {}).value || ''
+        });
+        openCompanyDetail(key);
+      });
+    }
+
+    const rsel = box.querySelector('.csv-detail-reason');
+    if (rsel) {
+      rsel.addEventListener('change', function () {
+        const val = rsel.value;
+        const recs = loadRecords();
+        recs.forEach(function (r) {
+          const k = r.entityId || r.taxCard || r.crNumber || r.companyName || String(r.id);
+          if (String(k) === String(key)) {
+            r.adminReason = val === '' ? null : val;
+            if (!r.adminClass) r.adminClass = 'weak';
+          }
         });
         saveRecords(recs);
         renderAdminMonitor({
