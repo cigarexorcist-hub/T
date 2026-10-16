@@ -71,7 +71,7 @@
     return p.join('-');
   }
 
-  /** بطاقة ضريبية 9 أرقام → 3-3-3 */
+  /** بطاقة ضريبية 9 أرقام → XXX-XXX-XXX */
   function formatTaxCard(v) {
     const d = digitsOnly(v).slice(0, 9);
     const p = [];
@@ -79,6 +79,48 @@
     if (d.length > 3) p.push(d.slice(3, 6));
     if (d.length > 6) p.push(d.slice(6, 9));
     return p.join('-');
+  }
+
+  /** تطبيع اسم المنشأة للمقارنة الذكية (إزالة مسافات زائدة وتوحيد الأحرف) */
+  function normalizeName(name) {
+    if (!name) return '';
+    return String(name)
+      .replace(/[\u064B-\u065F\u0670]/g, '') // حذف التشكيل
+      .replace(/[أإآٱ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/[\s\u00A0]+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  /** مقارنة أسماء بمرونة (تطابق كامل أو احتواء بعد التطبيع) */
+  function namesMatch(a, b) {
+    const na = normalizeName(a);
+    const nb = normalizeName(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    // تطابق جزئي قوي: أحدهما يحتوي الآخر وطول الأقصر ≥ 4 أحرف
+    const shorter = na.length <= nb.length ? na : nb;
+    const longer = na.length > nb.length ? na : nb;
+    return shorter.length >= 4 && longer.indexOf(shorter) !== -1;
+  }
+
+  /** تحليل ذكي لتاريخ الفاتورة: هل مرّ عليها عام أو أكثر؟ */
+  function isInvoiceOld(d, yearsThreshold) {
+    yearsThreshold = yearsThreshold || 1;
+    const raw = invoiceDateRaw(d);
+    if (!raw) return false;
+    try {
+      const invDate = new Date(raw);
+      if (isNaN(invDate.getTime())) return false;
+      const now = new Date();
+      const diffMs = now.getTime() - invDate.getTime();
+      const years = diffMs / (365.25 * 24 * 60 * 60 * 1000);
+      return years >= yearsThreshold;
+    } catch (_) {
+      return false;
+    }
   }
 
   function formatAddress(addr) {
@@ -535,7 +577,7 @@
       return 'تعذّر الاتصال بواجهة الفواتير الإلكترونية. تحقق من الإنترنت أو أعد المحاولة لاحقاً.';
     }
     if (code === 'HTTP') {
-      return 'واجهة الهيئة رفضت الطلب مؤقتاً. أعد المحاولة بعد لحظات.';
+      return 'انتهت فترة صلاحية استرجاع المستند أو أن بيانات المستند غير صالحة - يرجي اختيار فواتير صالحة.';
     }
     if (code === 'BAD_JSON' || code === 'EMPTY') {
       return 'استجابة غير متوقعة من واجهة الهيئة.';
@@ -543,34 +585,134 @@
     return 'تعذّر استخلاص بيانات الفاتورة من الرابط.';
   }
 
-  function analyzeResults(targetId, items) {
-    const target = (targetId || '').replace(/\D/g, '');
+  /**
+   * تحليل ذكي للعيّنة:
+   * - فاتورة مبيعات: يجب تطابق اسم ورقم المنشأة مع البائع (issuer)
+   * - فاتورة مشتريات: يجب تطابق اسم ورقم المنشأة مع المشتري (receiver)
+   * - كشف عدم تطابق الاسم أو رقم التسجيل (البطاقة الضريبية)
+   */
+  function analyzeResults(targetId, items, companyName) {
+    const target = digitsOnly(targetId || '');
+    const companyNorm = normalizeName(companyName || '');
     let validCount = 0;
     let matchCount = 0;
     let totalAmount = 0;
+    let salesCount = 0;
+    let salesAmount = 0;
+    let purchasesCount = 0;
+    let purchasesAmount = 0;
+    let idMismatchCount = 0;
+    let nameMismatchCount = 0;
+    let sideMismatchCount = 0;
+    let oldInvoiceCount = 0;
     const ids = new Set();
     const names = new Set();
+    const fraudFlags = [];
 
     items.forEach((it) => {
       if (!it.ok) return;
       const d = it.data;
+      const side = it.side || '';
+      const isSales = side === 'مبيعات';
+      const isPurchase = side === 'مشتريات';
+      const amount = Number(d.totalAmount) || 0;
+
       if (d.status === 'Valid') validCount++;
-      totalAmount += Number(d.totalAmount) || 0;
-      if (d.issuer?.id) {
-        ids.add(d.issuer.id);
-        names.add(d.issuer.name);
+      totalAmount += amount;
+
+      if (isSales) {
+        salesCount++;
+        salesAmount += amount;
+      } else if (isPurchase) {
+        purchasesCount++;
+        purchasesAmount += amount;
       }
-      if (d.receiver?.id) {
-        ids.add(d.receiver.id);
-        names.add(d.receiver.name);
+
+      if (isInvoiceOld(d, 1)) oldInvoiceCount++;
+
+      const issuerId = d.issuer?.id ? digitsOnly(d.issuer.id) : '';
+      const receiverId = d.receiver?.id ? digitsOnly(d.receiver.id) : '';
+      const issuerName = d.issuer?.name || '';
+      const receiverName = d.receiver?.name || '';
+
+      if (issuerId) ids.add(issuerId);
+      if (receiverId) ids.add(receiverId);
+      if (issuerName) names.add(issuerName);
+      if (receiverName) names.add(receiverName);
+
+      // الطرف المتوقع حسب نوع الفاتورة
+      let expectedPartyId = '';
+      let expectedPartyName = '';
+      let expectedRoleLabel = '';
+      if (isSales) {
+        expectedPartyId = issuerId;
+        expectedPartyName = issuerName;
+        expectedRoleLabel = 'البائع (المصدر)';
+      } else if (isPurchase) {
+        expectedPartyId = receiverId;
+        expectedPartyName = receiverName;
+        expectedRoleLabel = 'المشتري (المستلم)';
+      } else {
+        // غير مصنّف: قبول أي طرف
+        expectedPartyId = issuerId === target ? issuerId : receiverId;
+        expectedPartyName = issuerId === target ? issuerName : receiverName;
+        expectedRoleLabel = 'أحد الطرفين';
       }
-      if (target && (d.issuer?.id === target || d.receiver?.id === target)) {
+
+      const idMatches = target && expectedPartyId && expectedPartyId === target;
+      const nameMatches = companyNorm && expectedPartyName && namesMatch(companyNorm, expectedPartyName);
+
+      // حالات الغش / عدم الاتساق
+      if (target && expectedPartyId && expectedPartyId !== target) {
+        idMismatchCount++;
+        fraudFlags.push({
+          type: 'id',
+          side: side,
+          message:
+            'عدم تطابق رقم التسجيل (البطاقة الضريبية): في الفاتورة (' +
+            (expectedPartyId || '—') +
+            ') بينما المسجّل للمنشأة (' +
+            target +
+            ') — الطرف: ' +
+            expectedRoleLabel
+        });
+      }
+      if (companyNorm && expectedPartyName && !namesMatch(companyNorm, expectedPartyName)) {
+        nameMismatchCount++;
+        fraudFlags.push({
+          type: 'name',
+          side: side,
+          message:
+            'عدم تطابق اسم المنشأة: في الفاتورة («' +
+            (expectedPartyName || '—') +
+            '») بينما المسجّل («' +
+            (companyName || '—') +
+            '») — الطرف: ' +
+            expectedRoleLabel
+        });
+      }
+
+      // مطابقة كاملة للهوية (رقم + اسم) حسب نوع الفاتورة
+      if (idMatches && (nameMatches || !companyNorm)) {
         matchCount++;
+      } else if (target && (issuerId === target || receiverId === target) && !idMatches) {
+        // الرقم موجود لكن في الطرف الخطأ (مبيعات/مشتريات معكوسة)
+        sideMismatchCount++;
+        fraudFlags.push({
+          type: 'side',
+          side: side,
+          message:
+            'الرقم الضريبي موجود لكن في الطرف غير المتوقع لنوع الفاتورة (' +
+            side +
+            '). يُتوقع أن يكون المنشأة هي ' +
+            expectedRoleLabel
+        });
       }
     });
 
     const okItems = items.filter((i) => i.ok);
     const ratioValid = okItems.length ? validCount / okItems.length : 0;
+    const hasFraud = idMismatchCount > 0 || nameMismatchCount > 0 || sideMismatchCount > 0;
 
     let classification = 'review';
     let label = 'تحتاج استكمال';
@@ -581,16 +723,31 @@
       label = 'عيّنة غير مكتملة';
       reason =
         'لم يُستخرج أي فاتورة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
+    } else if (hasFraud && matchCount === 0) {
+      classification = 'weak';
+      label = 'مؤشرات تدليس / عدم اتساق';
+      reason =
+        'اكتُشفت حالات عدم تطابق في اسم المنشأة أو رقم التسجيل (البطاقة الضريبية) أو طرف الفاتورة. العيّنة لا تدعم إثبات الجدية وقد تشير إلى محاولة تدليس.';
     } else if (target && matchCount === 0) {
       classification = 'weak';
       label = 'عدم اتساق الهوية';
       reason =
-        'الفواتير المستخرجة غير مرتبطة برقم المنشأة المستهدف. العيّنة لا تدعم إثبات الجدية.';
-    } else if (ratioValid >= 0.8 && (matchCount >= 1 || !target) && okItems.length >= 1) {
+        'الفواتير المستخرجة غير مرتبطة برقم المنشأة المستهدف أو اسمها. العيّنة لا تدعم إثبات الجدية.';
+    } else if (
+      ratioValid >= 0.8 &&
+      matchCount >= 1 &&
+      !hasFraud &&
+      okItems.length >= 1
+    ) {
       classification = 'strong';
       label = 'مؤشرات جدية إيجابية';
       reason =
-        'اتساق هوية المنشأة مع معاملات موثقة رسمية بحالة صالحة. مؤشر أوّلي لإثبات الجدية — وليس اعتماداً نهائياً.';
+        'اتساق كامل لهوية المنشأة (الاسم + رقم التسجيل) مع نوع المعاملة (مبيعات/مشتريات) وفواتير رسمية صالحة. مؤشر أوّلي لإثبات الجدية — وليس اعتماداً نهائياً.';
+    } else if (hasFraud && matchCount > 0) {
+      classification = 'review';
+      label = 'تحتاج مراجعة دقيقة';
+      reason =
+        'يوجد تطابق جزئي لكن مع مؤشرات عدم اتساق في الاسم أو الرقم أو طرف الفاتورة. يُنصح بمراجعة يدوية من الأدمن.';
     } else if (ratioValid < 0.5) {
       classification = 'weak';
       label = 'مؤشرات ضعف في العيّنة';
@@ -602,11 +759,30 @@
         'النتائج مختلطة. يُنصح بتوسيع العيّنة أو إرفاق مستندات داعمة إضافية.';
     }
 
+    // نصيحة التواريخ
+    let dateAdvice = '';
+    if (oldInvoiceCount > 0) {
+      dateAdvice =
+        'تنبيه ذكي: يوجد ' +
+        oldInvoiceCount +
+        ' فاتورة مرّ عليها عام أو أكثر. يُنصح بتقديم فواتير عن العام الحالي لدعم إثبات الجدية بشكل أقوى.';
+    }
+
     return {
       validCount,
       matchCount,
       totalAmount,
       okCount: okItems.length,
+      salesCount,
+      salesAmount,
+      purchasesCount,
+      purchasesAmount,
+      idMismatchCount,
+      nameMismatchCount,
+      sideMismatchCount,
+      oldInvoiceCount,
+      fraudFlags,
+      dateAdvice,
       ids: [...ids],
       names: [...names],
       classification,
@@ -661,11 +837,60 @@
       @media(max-width:768px){ .csv-links { grid-template-columns: 1fr; } }
       .csv-linkbox {
         border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 12px; background: #f8fafc;
+        transition: border-color .2s, box-shadow .2s;
+      }
+      .csv-linkbox:first-child {
+        border-color: #93c5fd; background: linear-gradient(180deg,#eff6ff 0%,#f8fafc 100%);
+      }
+      .csv-linkbox:last-child {
+        border-color: #86efac; background: linear-gradient(180deg,#f0fdf4 0%,#f8fafc 100%);
       }
       .csv-linkbox h4 { font-size: 13px; margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
-      .csv-tag { font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 700; }
-      .csv-tag.in { background: #dbeafe; color: #1d4ed8; }
-      .csv-tag.out { background: #dcfce7; color: #15803d; }
+      .csv-tag { font-size: 10px; padding: 3px 10px; border-radius: 6px; font-weight: 700; letter-spacing: 0.3px; }
+      .csv-tag.in { background: linear-gradient(135deg,#dbeafe,#bfdbfe); color: #1e40af; border: 1px solid #93c5fd; }
+      .csv-tag.out { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #166534; border: 1px solid #86efac; }
+      .csv-inv.csv-inv-sales {
+        border-right: 4px solid #16a34a;
+        background: linear-gradient(90deg, #f0fdf4 0%, #fff 40%);
+      }
+      .csv-inv.csv-inv-purchase {
+        border-right: 4px solid #2563eb;
+        background: linear-gradient(90deg, #eff6ff 0%, #fff 40%);
+      }
+      .csv-inv.csv-inv-fraud {
+        border-right: 4px solid #dc2626 !important;
+        background: linear-gradient(90deg, #fef2f2 0%, #fff 50%) !important;
+        box-shadow: 0 0 0 1px #fecaca;
+      }
+      .csv-fraud-alert {
+        background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 10px;
+        padding: 10px 12px; margin: 8px 0; font-size: 12px; color: #991b1b; line-height: 1.6;
+      }
+      .csv-fraud-alert strong { color: #7f1d1d; }
+      .csv-date-advice {
+        background: linear-gradient(135deg,#fffbeb,#fef3c7); border: 1.5px solid #fcd34d;
+        border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 13px; color: #92400e; line-height: 1.7;
+      }
+      .csv-mini-report {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0;
+      }
+      .csv-mini-report .box {
+        border-radius: 12px; padding: 12px 14px; text-align: center;
+      }
+      .csv-mini-report .box.sales {
+        background: linear-gradient(135deg,#f0fdf4,#dcfce7); border: 1.5px solid #86efac;
+      }
+      .csv-mini-report .box.purchases {
+        background: linear-gradient(135deg,#eff6ff,#dbeafe); border: 1.5px solid #93c5fd;
+      }
+      .csv-mini-report .box .n { font-size: 1.2rem; font-weight: 800; }
+      .csv-mini-report .box .l { font-size: 11px; color: #64748b; margin-top: 2px; }
+      .csv-match-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+      .csv-match-badges span {
+        font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 700;
+      }
+      .csv-match-ok { background: #d1fae5; color: #065f46; }
+      .csv-match-no { background: #fee2e2; color: #991b1b; }
       .csv-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
       .csv-row input {
         flex: 1; padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px;
@@ -1101,11 +1326,12 @@
       modal('اسم المنشأة مطلوب', 'أدخل اسم الشركة / المنشأة قبل تحليل العيّنة.', '🏢');
       return;
     }
-    const entityId = (document.getElementById('csv-entity-id') || {}).value || '';
-    if (!entityId.trim()) {
+    const entityIdRaw = (document.getElementById('csv-entity-id') || {}).value || '';
+    const entityId = digitsOnly(entityIdRaw);
+    if (!entityId || entityId.length !== 9) {
       modal(
-        'رقم التعريف مطلوب',
-        'أدخل رقم التعريف / البطاقة الضريبية للمنشأة — أساس مطابقة العيّنة.',
+        'البطاقة الضريبية مطلوبة',
+        'أدخل رقم البطاقة الضريبية للمنشأة كاملاً (9 أرقام فقط) بالصيغة XXX-XXX-XXX — أساس مطابقة العيّنة.',
         '🔢'
       );
       return;
@@ -1164,15 +1390,16 @@
       }
     }
 
-    const summary = analyzeResults(entityId.trim(), results);
     const companyName = companyNameReq;
+    const summary = analyzeResults(entityId.trim(), results, companyName);
     const crRaw = crReq;
+    const taxDigits = digitsOnly(entityId);
     sessionStore.lastAnalysis = {
       id: Date.now(),
-      entityId: entityId.trim(),
+      entityId: taxDigits,
       companyName,
       crNumber: crRaw,
-      taxCard: entityId.trim(),
+      taxCard: taxDigits,
       role: sessionStore.role,
       results,
       summary,
@@ -1193,62 +1420,237 @@
     if (!panel) return;
     panel.style.display = 'block';
     const s = analysis.summary;
-    panel.innerHTML = `
-      <div class="csv-card">
-        <h3>مؤشر الجدية — نتيجة العيّنة</h3>
-        <div class="sub">${analysis.companyName} · رقم المنشأة: ${analysis.entityId} · ${analysis.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر'}</div>
-        <div class="csv-kpi">
-          <div><div class="v">${s.okCount}</div><div class="l">فاتورة مُستخرجة</div></div>
-          <div><div class="v" style="color:#059669">${s.validCount}</div><div class="l">صالحة (Valid)</div></div>
-          <div><div class="v" style="color:#0d9488">${s.matchCount}</div><div class="l">مطابقة للهوية</div></div>
-          <div><div class="v">${fmtMoney(s.totalAmount)}</div><div class="l">إجمالي العيّنة</div></div>
-        </div>
-        ${analysis.results
-          .map((r, i) => {
-            if (!r.ok) {
-              return `<div class="csv-inv"><div class="hd"><strong>فاتورة ${i + 1} — ${r.side}</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>
-                <div style="font-size:12px;color:#b91c1c;margin-top:6px;line-height:1.5">${r.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.'}</div>
-                <div style="font-size:11px;color:#64748b;margin-top:4px;direction:ltr;word-break:break-all">${r.url || ''}</div>
-              </div>`;
-            }
-            const d = r.data;
-            const match =
-              analysis.entityId &&
-              (d.issuer?.id === analysis.entityId ||
-                d.receiver?.id === analysis.entityId);
-            const invDate = formatInvoiceDate(d.dateTimeIssued || d.dateTimeRecevied);
-            const invDateRaw = invoiceDateRaw(d);
-            return `<div class="csv-inv">
-              <div class="hd">
-                <div><strong>فاتورة ${i + 1} — ${r.side}</strong>
-                  <div style="font-size:11px;color:#64748b">${d.documentTypeNameSecondaryLang || 'معاملة'} · تاريخ الإصدار: <strong style="color:#0b1f3a">${invDate}</strong>${invDateRaw ? ' <span dir="ltr">(' + invDateRaw + ')</span>' : ''}</div>
-                </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap">
-                  <span class="csv-st ${match ? 'csv-st-ok' : 'csv-st-no'}">${match ? 'مطابق للهوية' : 'غير مطابق'}</span>
-                  <span class="csv-st ${d.status === 'Valid' ? 'csv-st-ok' : 'csv-st-no'}">${d.status || '—'}</span>
-                </div>
-              </div>
-              <div class="csv-grid">
-                <div><span class="k">الطرف المصدر</span><br><span class="v">${d.issuer?.name || '—'}</span><br><small style="color:#64748b">${d.issuer?.id || ''}</small><br><small style="color:#64748b;line-height:1.4">${formatAddress(d.issuer?.address)}</small></div>
-                <div><span class="k">الطرف المستلم</span><br><span class="v">${d.receiver?.name || '—'}</span><br><small style="color:#64748b">${d.receiver?.id || ''}</small><br><small style="color:#64748b;line-height:1.4">${formatAddress(d.receiver?.address)}</small></div>
-              </div>
-              ${itemLinesHtml(d)}
-              <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-                <div style="font-size:12px;color:#64748b">📅 تاريخ استخلاص/إصدار الفاتورة: <strong style="color:#0b1f3a">${invDate}</strong></div>
-                <div style="font-weight:800;font-size:1.05rem">${fmtMoney(d.totalAmount)}</div>
-              </div>
-            </div>`;
-          })
-          .join('')}
-        <div class="csv-verdict ${s.classification === 'strong' ? 'strong' : s.classification === 'weak' ? 'weak' : 'review'}">
-          <h4>${s.classification === 'strong' ? '✅' : s.classification === 'weak' ? '⛔' : '⚠️'} ${s.label}</h4>
-          <p>${s.reason}</p>
-          <p style="margin-top:8px;font-size:11px;opacity:.85">تقييم أوّلي لعيّنة معاملات موثقة — لا يُعد اعتماداً نهائياً ولا إثبات تمثيل للمنشأة.</p>
-        </div>
-        <div class="csv-actions" style="margin-top:14px;justify-content:center">
-          <button type="button" class="csv-btn csv-btn-gold" id="csv-send-admin">📥 إرسال للمتابعة (جلسة العرض فقط)</button>
-        </div>
-      </div>`;
+    const target = digitsOnly(analysis.entityId || '');
+    const companyName = analysis.companyName || '';
+
+    function invoiceMatchInfo(r) {
+      if (!r.ok) return { invClass: '', idOk: false, nameOk: false, fullOk: false, badges: '', fraudHtml: '' };
+      const d = r.data;
+      const isSales = r.side === 'مبيعات';
+      const isPurchase = r.side === 'مشتريات';
+      const issuerId = d.issuer?.id ? digitsOnly(d.issuer.id) : '';
+      const receiverId = d.receiver?.id ? digitsOnly(d.receiver.id) : '';
+      const issuerName = d.issuer?.name || '';
+      const receiverName = d.receiver?.name || '';
+
+      let expectedId = '';
+      let expectedName = '';
+      let roleLabel = '';
+      if (isSales) {
+        expectedId = issuerId;
+        expectedName = issuerName;
+        roleLabel = 'البائع';
+      } else if (isPurchase) {
+        expectedId = receiverId;
+        expectedName = receiverName;
+        roleLabel = 'المشتري';
+      } else {
+        expectedId = issuerId === target ? issuerId : receiverId;
+        expectedName = issuerId === target ? issuerName : receiverName;
+        roleLabel = 'أحد الطرفين';
+      }
+
+      const idOk = !!(target && expectedId && expectedId === target);
+      const nameOk = !!(companyName && expectedName && namesMatch(companyName, expectedName));
+      const fullOk = idOk && (nameOk || !companyName);
+
+      let invClass = isSales ? ' csv-inv-sales' : isPurchase ? ' csv-inv-purchase' : '';
+      if (!fullOk && (target || companyName)) invClass += ' csv-inv-fraud';
+
+      const badges =
+        '<div class="csv-match-badges">' +
+        '<span class="' + (idOk ? 'csv-match-ok' : 'csv-match-no') + '">' +
+        (idOk ? '✓ رقم التسجيل' : '✗ رقم التسجيل') +
+        '</span>' +
+        '<span class="' + (nameOk ? 'csv-match-ok' : 'csv-match-no') + '">' +
+        (nameOk ? '✓ اسم المنشأة' : '✗ اسم المنشأة') +
+        '</span>' +
+        '<span class="' + (fullOk ? 'csv-match-ok' : 'csv-match-no') + '">' +
+        (fullOk ? 'مطابق (' + roleLabel + ')' : 'غير مطابق (' + roleLabel + ')') +
+        '</span></div>';
+
+      let fraudHtml = '';
+      if (!idOk && target && expectedId) {
+        fraudHtml +=
+          '<div class="csv-fraud-alert"><strong>⚠ عدم تطابق رقم التسجيل:</strong> في الفاتورة <span dir="ltr">' +
+          (expectedId || '—') +
+          '</span> بينما المسجّل <span dir="ltr">' +
+          target +
+          '</span> (الطرف: ' +
+          roleLabel +
+          ')</div>';
+      }
+      if (!nameOk && companyName && expectedName) {
+        fraudHtml +=
+          '<div class="csv-fraud-alert"><strong>⚠ عدم تطابق اسم المنشأة:</strong> في الفاتورة «' +
+          expectedName +
+          '» بينما المسجّل «' +
+          companyName +
+          '» (الطرف: ' +
+          roleLabel +
+          ')</div>';
+      }
+
+      return { invClass, idOk, nameOk, fullOk, badges, fraudHtml };
+    }
+
+    const fraudSummaryHtml =
+      s.fraudFlags && s.fraudFlags.length
+        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات تدليس / عدم اتساق (' +
+          s.fraudFlags.length +
+          '):</strong><ul style="margin:6px 0 0 0;padding-right:18px">' +
+          s.fraudFlags
+            .map(function (f) {
+              return '<li style="margin-bottom:4px">' + f.message + '</li>';
+            })
+            .join('') +
+          '</ul></div>'
+        : '';
+
+    const dateAdviceHtml = s.dateAdvice
+      ? '<div class="csv-date-advice">📅 <strong>تحليل التواريخ:</strong> ' + s.dateAdvice + '</div>'
+      : '';
+
+    const miniReportHtml =
+      '<div class="csv-mini-report">' +
+      '<div class="box sales"><div class="n" style="color:#166534">' +
+      (s.salesCount || 0) +
+      '</div><div class="l">فواتير مبيعات</div><div style="font-weight:700;margin-top:4px;color:#15803d">' +
+      fmtMoney(s.salesAmount || 0) +
+      '</div></div>' +
+      '<div class="box purchases"><div class="n" style="color:#1e40af">' +
+      (s.purchasesCount || 0) +
+      '</div><div class="l">فواتير مشتريات</div><div style="font-weight:700;margin-top:4px;color:#1d4ed8">' +
+      fmtMoney(s.purchasesAmount || 0) +
+      '</div></div></div>';
+
+    panel.innerHTML =
+      '<div class="csv-card">' +
+      '<h3>مؤشر الجدية — نتيجة العيّنة</h3>' +
+      '<div class="sub">' +
+      analysis.companyName +
+      ' · البطاقة الضريبية: <span dir="ltr">' +
+      formatTaxCard(analysis.entityId) +
+      '</span> · ' +
+      (analysis.role === 'auditor' ? 'محاسب قانوني' : 'مستثمر') +
+      '</div>' +
+      '<div class="csv-kpi">' +
+      '<div><div class="v">' +
+      s.okCount +
+      '</div><div class="l">فاتورة مُستخرجة</div></div>' +
+      '<div><div class="v" style="color:#059669">' +
+      s.validCount +
+      '</div><div class="l">صالحة (Valid)</div></div>' +
+      '<div><div class="v" style="color:#0d9488">' +
+      s.matchCount +
+      '</div><div class="l">مطابقة للهوية</div></div>' +
+      '<div><div class="v">' +
+      fmtMoney(s.totalAmount) +
+      '</div><div class="l">إجمالي العيّنة</div></div>' +
+      '</div>' +
+      miniReportHtml +
+      fraudSummaryHtml +
+      dateAdviceHtml +
+      analysis.results
+        .map(function (r, i) {
+          if (!r.ok) {
+            return (
+              '<div class="csv-inv"><div class="hd"><strong>فاتورة ' +
+              (i + 1) +
+              ' — ' +
+              r.side +
+              '</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>' +
+              '<div style="font-size:12px;color:#b91c1c;margin-top:6px;line-height:1.5">' +
+              (r.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.') +
+              '</div>' +
+              '<div style="font-size:11px;color:#64748b;margin-top:4px;direction:ltr;word-break:break-all">' +
+              (r.url || '') +
+              '</div></div>'
+            );
+          }
+          const d = r.data;
+          const info = invoiceMatchInfo(r);
+          const invDate = formatInvoiceDate(d.dateTimeIssued || d.dateTimeRecevied);
+          const invDateRaw = invoiceDateRaw(d);
+          const sideTag =
+            r.side === 'مبيعات'
+              ? '<span class="csv-tag out">مبيعات</span>'
+              : r.side === 'مشتريات'
+                ? '<span class="csv-tag in">مشتريات</span>'
+                : '';
+          return (
+            '<div class="csv-inv' +
+            info.invClass +
+            '">' +
+            '<div class="hd">' +
+            '<div><strong>فاتورة ' +
+            (i + 1) +
+            '</strong> ' +
+            sideTag +
+            '<div style="font-size:11px;color:#64748b;margin-top:3px">' +
+            (d.documentTypeNameSecondaryLang || 'معاملة') +
+            ' · تاريخ الإصدار: <strong style="color:#0b1f3a">' +
+            invDate +
+            '</strong>' +
+            (invDateRaw ? ' <span dir="ltr">(' + invDateRaw + ')</span>' : '') +
+            '</div>' +
+            info.badges +
+            '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+            '<span class="csv-st ' +
+            (info.fullOk ? 'csv-st-ok' : 'csv-st-no') +
+            '">' +
+            (info.fullOk ? 'مطابق للهوية' : 'غير مطابق') +
+            '</span>' +
+            '<span class="csv-st ' +
+            (d.status === 'Valid' ? 'csv-st-ok' : 'csv-st-no') +
+            '">' +
+            (d.status || '—') +
+            '</span></div></div>' +
+            info.fraudHtml +
+            '<div class="csv-grid">' +
+            '<div><span class="k">الطرف المصدر (البائع)</span><br><span class="v">' +
+            (d.issuer?.name || '—') +
+            '</span><br><small style="color:#64748b" dir="ltr">' +
+            (d.issuer?.id || '') +
+            '</small><br><small style="color:#64748b;line-height:1.4">' +
+            formatAddress(d.issuer?.address) +
+            '</small></div>' +
+            '<div><span class="k">الطرف المستلم (المشتري)</span><br><span class="v">' +
+            (d.receiver?.name || '—') +
+            '</span><br><small style="color:#64748b" dir="ltr">' +
+            (d.receiver?.id || '') +
+            '</small><br><small style="color:#64748b;line-height:1.4">' +
+            formatAddress(d.receiver?.address) +
+            '</small></div></div>' +
+            itemLinesHtml(d) +
+            '<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+            '<div style="font-size:12px;color:#64748b">📅 تاريخ الإصدار: <strong style="color:#0b1f3a">' +
+            invDate +
+            '</strong></div>' +
+            '<div style="font-weight:800;font-size:1.05rem">' +
+            fmtMoney(d.totalAmount) +
+            '</div></div></div>'
+          );
+        })
+        .join('') +
+      '<div class="csv-verdict ' +
+      (s.classification === 'strong' ? 'strong' : s.classification === 'weak' ? 'weak' : 'review') +
+      '">' +
+      '<h4>' +
+      (s.classification === 'strong' ? '✅' : s.classification === 'weak' ? '⛔' : '⚠️') +
+      ' ' +
+      s.label +
+      '</h4>' +
+      '<p>' +
+      s.reason +
+      '</p>' +
+      '<p style="margin-top:8px;font-size:11px;opacity:.85">تقييم أوّلي لعيّنة معاملات موثقة — لا يُعد اعتماداً نهائياً ولا إثبات تمثيل للمنشأة.</p>' +
+      '</div>' +
+      '<div class="csv-actions" style="margin-top:14px;justify-content:center">' +
+      '<button type="button" class="csv-btn csv-btn-gold" id="csv-send-admin">📥 إرسال للمتابعة (جلسة العرض فقط)</button>' +
+      '</div></div>';
+
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const sendBtn = document.getElementById('csv-send-admin');
     if (sendBtn) {
@@ -1264,14 +1666,44 @@
 
         const isAuditor = sessionStore.role === 'auditor';
         const who = isAuditor ? 'السيد/ المحاسب القانوني ' : 'السيد/ المستثمر ';
+        const sum = rec.summary || {};
         const formalMsg =
           '<div style="text-align:right;line-height:1.85;font-size:13px">' +
-          '<strong>' + who + '</strong><br><br>' +
+          '<strong>' +
+          who +
+          '</strong><br><br>' +
           'نفيدكم بأنه تم <strong>استلام عيّنة إثبات الجدية</strong> للمنشأة:<br>' +
-          '<strong style="color:#0b1f3a">' + (rec.companyName || '—') + '</strong><br>' +
-          'رقم التعريف الرسمي: <strong>' + (rec.entityId || '—') + '</strong><br>' +
-          (rec.crNumber ? ('السجل التجاري الموحد: <strong dir="ltr">' + formatCR(rec.crNumber) + '</strong><br>') : '') +
-          (rec.taxCard ? ('البطاقة الضريبية: <strong dir="ltr">' + formatTaxCard(rec.taxCard) + '</strong><br>') : '') +
+          '<strong style="color:#0b1f3a">' +
+          (rec.companyName || '—') +
+          '</strong><br>' +
+          (rec.crNumber
+            ? 'السجل التجاري الموحد: <strong dir="ltr">' + formatCR(rec.crNumber) + '</strong><br>'
+            : '') +
+          (rec.taxCard
+            ? 'البطاقة الضريبية: <strong dir="ltr">' + formatTaxCard(rec.taxCard) + '</strong><br>'
+            : '') +
+          '<br>' +
+          '<div class="csv-mini-report" style="margin:10px 0">' +
+          '<div class="box sales"><div class="n" style="color:#166534">' +
+          (sum.salesCount || 0) +
+          '</div><div class="l">فواتير مبيعات</div><div style="font-weight:700;margin-top:4px;color:#15803d">' +
+          fmtMoney(sum.salesAmount || 0) +
+          '</div></div>' +
+          '<div class="box purchases"><div class="n" style="color:#1e40af">' +
+          (sum.purchasesCount || 0) +
+          '</div><div class="l">فواتير مشتريات</div><div style="font-weight:700;margin-top:4px;color:#1d4ed8">' +
+          fmtMoney(sum.purchasesAmount || 0) +
+          '</div></div></div>' +
+          (sum.dateAdvice
+            ? '<div class="csv-date-advice" style="margin:10px 0">📅 <strong>تحليل التواريخ:</strong> ' +
+              sum.dateAdvice +
+              '</div>'
+            : '') +
+          (sum.fraudFlags && sum.fraudFlags.length
+            ? '<div class="csv-fraud-alert" style="margin:10px 0"><strong>تنبيهات عدم اتساق:</strong> ' +
+              sum.fraudFlags.length +
+              ' حالة — يُرجى مراجعة الأدمن.</div>'
+            : '') +
           '<br>' +
           'تم تسجيل النتيجة في <strong>سجل المتابعة</strong> لدى المنظومة، ويمكن الاطلاع عليها فوراً من شاشة المتابعة في تبويب الأدمن (نفس المتصفح).<br><br>' +
           '<span style="display:inline-block;background:#d1fae5;color:#065f46;padding:4px 12px;border-radius:20px;font-weight:700;font-size:12px">تم الإرسال بنجاح</span><br><br>' +
@@ -1279,7 +1711,9 @@
           '</div>';
 
         modal('تم الإرسال بنجاح', formalMsg, '📨');
-        try { renderAdminMonitor(); } catch (_) {}
+        try {
+          renderAdminMonitor();
+        } catch (_) {}
       };
     }
   }
@@ -1312,8 +1746,8 @@
           <input type="text" id="csv-company-name" placeholder="اسم المنشأة كما في السجل التجاري" value="">
         </div>
         <div class="csv-field">
-          <label>رقم التعريف / البطاقة الضريبية <span style="color:#dc2626">*</span></label>
-          <input type="text" id="csv-entity-id" placeholder="مثال: 483893145" value="" maxlength="15" inputmode="numeric">
+          <label>رقم البطاقة الضريبية <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(9 أرقام)</span></label>
+          <input type="text" id="csv-entity-id" placeholder="XXX-XXX-XXX" value="" maxlength="11" inputmode="numeric" autocomplete="off" dir="ltr" style="text-align:left;letter-spacing:0.5px">
         </div>
         <div class="csv-field">
           <label>رقم السجل التجاري الموحد <span style="color:#dc2626">*</span> <span style="color:#64748b;font-weight:400">(15 رقم)</span></label>
@@ -1446,6 +1880,7 @@
 
     buildLinkRows('csv-links-in', 'in');
     buildLinkRows('csv-links-out', 'out');
+    bindGroupedInput(document.getElementById('csv-entity-id'), 9, formatTaxCard);
     bindGroupedInput(document.getElementById('csv-cr-number'), 15, formatCR);
     refreshCaptcha();
     updateAttemptsUI();
@@ -1713,14 +2148,14 @@
       '<button type="button" class="csv-btn csv-btn-soft" id="csv-detail-close" style="padding:6px 12px;font-size:12px">إغلاق</button>' +
       '</div>' +
       '<div class="csv-grid" style="margin-top:14px">' +
-      '<div><span class="k">رقم التعريف</span><br><span class="v">' +
-      (c.entityId || '—') +
-      '</span></div>' +
       '<div><span class="k">البطاقة الضريبية</span><br><span class="v" dir="ltr">' +
-      (c.taxCard ? formatTaxCard(c.taxCard) : '—') +
+      (c.taxCard || c.entityId ? formatTaxCard(c.taxCard || c.entityId) : '—') +
       '</span></div>' +
       '<div><span class="k">السجل التجاري الموحد</span><br><span class="v" dir="ltr">' +
       (c.crNumber ? formatCR(c.crNumber) : '—') +
+      '</span></div>' +
+      '<div><span class="k">عدد الفواتير</span><br><span class="v">' +
+      (c.invoiceCount || 0) +
       '</span></div>' +
       '<div><span class="k">التصنيف المعتمد</span><br><span class="csv-pill ' +
       classPill(c.effective) +
@@ -1772,20 +2207,79 @@
                 );
               }
               const d = inv.data || {};
-              const match =
-                rec.entityId &&
-                ((d.issuer && d.issuer.id === rec.entityId) ||
-                  (d.receiver && d.receiver.id === rec.entityId));
+              const target = digitsOnly(rec.entityId || rec.taxCard || '');
+              const companyName = rec.companyName || '';
+              const isSales = inv.side === 'مبيعات';
+              const isPurchase = inv.side === 'مشتريات';
+              const issuerId = d.issuer && d.issuer.id ? digitsOnly(d.issuer.id) : '';
+              const receiverId = d.receiver && d.receiver.id ? digitsOnly(d.receiver.id) : '';
+              const issuerName = (d.issuer && d.issuer.name) || '';
+              const receiverName = (d.receiver && d.receiver.name) || '';
+
+              let expectedId = '';
+              let expectedName = '';
+              let roleLabel = '';
+              if (isSales) {
+                expectedId = issuerId;
+                expectedName = issuerName;
+                roleLabel = 'البائع';
+              } else if (isPurchase) {
+                expectedId = receiverId;
+                expectedName = receiverName;
+                roleLabel = 'المشتري';
+              } else {
+                expectedId = issuerId === target ? issuerId : receiverId;
+                expectedName = issuerId === target ? issuerName : receiverName;
+                roleLabel = 'أحد الطرفين';
+              }
+
+              const idOk = !!(target && expectedId && expectedId === target);
+              const nameOk = !!(companyName && expectedName && namesMatch(companyName, expectedName));
+              const fullOk = idOk && (nameOk || !companyName);
+
+              let invClass = isSales ? ' csv-inv-sales' : isPurchase ? ' csv-inv-purchase' : '';
+              if (!fullOk && (target || companyName)) invClass += ' csv-inv-fraud';
+
               const invDate = formatInvoiceDate(d.dateTimeIssued || d.dateTimeRecevied);
               const invDateRaw = invoiceDateRaw(d);
+              const sideTag =
+                isSales
+                  ? '<span class="csv-tag out">مبيعات</span>'
+                  : isPurchase
+                    ? '<span class="csv-tag in">مشتريات</span>'
+                    : '';
+
+              let fraudHtml = '';
+              if (!idOk && target && expectedId) {
+                fraudHtml +=
+                  '<div class="csv-fraud-alert"><strong>⚠ عدم تطابق رقم التسجيل:</strong> في الفاتورة <span dir="ltr">' +
+                  expectedId +
+                  '</span> بينما المسجّل <span dir="ltr">' +
+                  target +
+                  '</span> (' +
+                  roleLabel +
+                  ')</div>';
+              }
+              if (!nameOk && companyName && expectedName) {
+                fraudHtml +=
+                  '<div class="csv-fraud-alert"><strong>⚠ عدم تطابق اسم المنشأة:</strong> في الفاتورة «' +
+                  expectedName +
+                  '» بينما المسجّل «' +
+                  companyName +
+                  '» (' +
+                  roleLabel +
+                  ')</div>';
+              }
+
               return (
-                '<div class="csv-inv">' +
+                '<div class="csv-inv' +
+                invClass +
+                '">' +
                 '<div class="hd">' +
                 '<div><strong>فاتورة ' +
                 (i + 1) +
-                ' — ' +
-                (inv.side || '') +
-                '</strong>' +
+                '</strong> ' +
+                sideTag +
                 '<div style="font-size:11px;color:#64748b">📅 تاريخ الإصدار: <strong style="color:#0b1f3a">' +
                 invDate +
                 '</strong>' +
@@ -1794,7 +2288,23 @@
                 (rec.role === 'auditor' ? 'محاسب' : 'مستثمر') +
                 ' · ' +
                 new Date(rec.at).toLocaleString('ar-EG') +
-                '</div></div>' +
+                '</div>' +
+                '<div class="csv-match-badges">' +
+                '<span class="' +
+                (idOk ? 'csv-match-ok' : 'csv-match-no') +
+                '">' +
+                (idOk ? '✓ رقم التسجيل' : '✗ رقم التسجيل') +
+                '</span>' +
+                '<span class="' +
+                (nameOk ? 'csv-match-ok' : 'csv-match-no') +
+                '">' +
+                (nameOk ? '✓ اسم المنشأة' : '✗ اسم المنشأة') +
+                '</span>' +
+                '<span class="' +
+                (fullOk ? 'csv-match-ok' : 'csv-match-no') +
+                '">' +
+                (fullOk ? 'مطابق (' + roleLabel + ')' : 'غير مطابق (' + roleLabel + ')') +
+                '</span></div></div>' +
                 '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
                 '<span class="csv-st ' +
                 (d.status === 'Valid' ? 'csv-st-ok' : 'csv-st-no') +
@@ -1802,30 +2312,29 @@
                 (d.status || '—') +
                 '</span>' +
                 '<span class="csv-st ' +
-                (match ? 'csv-st-ok' : 'csv-st-no') +
+                (fullOk ? 'csv-st-ok' : 'csv-st-no') +
                 '">' +
-                (match ? 'مطابق للهوية' : 'غير مطابق') +
-                '</span>' +
-                '</div></div>' +
+                (fullOk ? 'مطابق للهوية' : 'غير مطابق') +
+                '</span></div></div>' +
+                fraudHtml +
                 '<div class="csv-grid">' +
-                '<div><span class="k">المصدر</span><br><span class="v">' +
-                ((d.issuer && d.issuer.name) || '—') +
-                '</span><br><small style="color:#64748b">' +
-                ((d.issuer && d.issuer.id) || '') +
+                '<div><span class="k">المصدر (البائع)</span><br><span class="v">' +
+                issuerName +
+                '</span><br><small style="color:#64748b" dir="ltr">' +
+                issuerId +
                 '</small><br><small style="color:#64748b;line-height:1.4">' +
                 formatAddress(d.issuer && d.issuer.address) +
                 '</small></div>' +
-                '<div><span class="k">المستلم</span><br><span class="v">' +
-                ((d.receiver && d.receiver.name) || '—') +
-                '</span><br><small style="color:#64748b">' +
-                ((d.receiver && d.receiver.id) || '') +
+                '<div><span class="k">المستلم (المشتري)</span><br><span class="v">' +
+                receiverName +
+                '</span><br><small style="color:#64748b" dir="ltr">' +
+                receiverId +
                 '</small><br><small style="color:#64748b;line-height:1.4">' +
                 formatAddress(d.receiver && d.receiver.address) +
-                '</small></div>' +
-                '</div>' +
+                '</small></div></div>' +
                 itemLinesHtml(d) +
                 '<div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' +
-                '<div style="font-size:12px;color:#64748b">📅 تاريخ استخلاص الفاتورة: <strong style="color:#0b1f3a">' +
+                '<div style="font-size:12px;color:#64748b">📅 تاريخ الإصدار: <strong style="color:#0b1f3a">' +
                 invDate +
                 '</strong></div>' +
                 '<div style="font-weight:800">' +
