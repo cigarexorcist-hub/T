@@ -1880,17 +1880,49 @@ input.bg-success {
     .badge-licensed { background: #dff9fb; color: #0984e3; }
     .badge-pending { background: #fff5f5; color: #e84118; }
     
+    /* زر إغلاق لوحة التحكم — مثبت على جانب الشاشة */
     .btn-close-admin {
         position: fixed;
-        top: 20px;
-        left: 20px;
-        background: var(--admin-danger);
+        top: 50%;
+        left: 0;
+        transform: translateY(-50%);
+        background: linear-gradient(180deg, #b91c1c, #991b1b);
         color: white;
         border: none;
-        padding: 10px 20px;
-        border-radius: 10px;
+        border-radius: 0 14px 14px 0;
+        padding: 18px 12px;
         cursor: pointer;
-        z-index: 100000;
+        z-index: 100001;
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        box-shadow: 4px 0 18px rgba(185, 28, 28, 0.35);
+        transition: background .2s, padding .2s, box-shadow .2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .btn-close-admin i {
+        writing-mode: horizontal-tb;
+        font-size: 14px;
+    }
+    .btn-close-admin:hover {
+        background: linear-gradient(180deg, #dc2626, #b91c1c);
+        padding-left: 16px;
+        box-shadow: 6px 0 22px rgba(220, 38, 38, 0.45);
+    }
+    @media (max-width: 768px) {
+        .btn-close-admin {
+            top: auto;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            writing-mode: horizontal-tb;
+            border-radius: 999px;
+            padding: 12px 20px;
+        }
     }
 
 
@@ -1990,9 +2022,26 @@ input.bg-success {
         .kpi-card-new h3 { font-size: 1.8rem; font-weight: 800; margin: 5px 0; }
         .kpi-card-new p { color: #6c757d; font-size: 0.9rem; margin: 0; }
         .charts-grid-new { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
-        .chart-card-new { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .chart-card-new h5 { font-weight: 700; margin-bottom: 20px; color: #333; border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; }
-        .chart-container-new { position: relative; height: 300px; }
+        .chart-card-new {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            padding: 22px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(15, 23, 42, 0.08);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .chart-card-new::before {
+            content: '';
+            position: absolute; top: 0; right: 0; left: 0; height: 3px;
+            background: linear-gradient(90deg, #0d9488, #0ea5e9, #8b5cf6);
+        }
+        .chart-card-new h5 {
+            font-weight: 800; margin-bottom: 16px; color: #0f172a;
+            border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;
+            display: flex; align-items: center; gap: 8px; font-size: 0.95rem;
+        }
+        .chart-container-new { position: relative; height: 320px; }
         .filter-bar-new { background: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .status-badge-new { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
 
@@ -2048,20 +2097,47 @@ input.bg-success {
         50% { transform: translateX(180%); }
         100% { transform: translateX(-100%); }
     }
-    /* وضع ملء الشاشة للخريطة */
+    /* وضع ملء الشاشة للخريطة — الخريطة فقط بدون اللوحة الجانبية */
     .companies-map-wrapper.cmap-fullscreen {
         position: fixed; inset: 0; z-index: 99999;
-        background: #0f172a; padding: 12px 14px 14px;
-        overflow: auto; margin: 0;
+        background: #0f172a; padding: 10px 12px 12px;
+        overflow: hidden; margin: 0;
+        display: flex; flex-direction: column;
+    }
+    .companies-map-wrapper.cmap-fullscreen .cmap-header {
+        flex-shrink: 0; margin-bottom: 8px;
+    }
+    .companies-map-wrapper.cmap-fullscreen .cmap-header h3 { color: #fff; }
+    .companies-map-wrapper.cmap-fullscreen .cmap-subtitle { color: rgba(255,255,255,.7); }
+    .companies-map-wrapper.cmap-fullscreen .cmap-kpi-strip {
+        display: none;
     }
     .companies-map-wrapper.cmap-fullscreen .cmap-main-layout {
-        grid-template-columns: 260px 1fr; min-height: calc(100vh - 140px);
-    }
-    .companies-map-wrapper.cmap-fullscreen #companies-egypt-map {
-        height: calc(100vh - 160px);
+        grid-template-columns: 1fr;
+        flex: 1;
+        min-height: 0;
+        gap: 0;
     }
     .companies-map-wrapper.cmap-fullscreen .cmap-filters-panel {
-        max-height: calc(100vh - 160px);
+        display: none !important;
+    }
+    .companies-map-wrapper.cmap-fullscreen .cmap-map-area {
+        height: 100%;
+        border-radius: 12px;
+    }
+    .companies-map-wrapper.cmap-fullscreen #companies-egypt-map {
+        height: 100% !important;
+        min-height: calc(100vh - 90px);
+    }
+    .companies-map-wrapper.cmap-fullscreen .cmap-detail-card {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        z-index: 1200;
+        max-height: 42vh;
+        overflow: auto;
+        margin: 0;
     }
     .cmap-fs-btn {
         border: none; border-radius: 10px; padding: 7px 12px; font-size: 13px;
@@ -2112,8 +2188,11 @@ input.bg-success {
     </head>
 <body>
 <div id="adminDashboardBI" class="admin-dashboard-wrapper">
-    <!-- زر إغلاق لوحة التحكم (القديم - يسار) -->
-    <button class="btn-close-admin" onclick="closeAdminBI()"><i class="fas fa-times"></i> إغلاق لوحة التحكم</button>
+    <!-- زر إغلاق لوحة التحكم — جانب الشاشة -->
+    <button type="button" class="btn-close-admin" onclick="closeAdminBI()" title="إغلاق لوحة التحكم">
+        <i class="fas fa-times"></i>
+        <span>إغلاق لوحة التحكم</span>
+    </button>
     
     <!-- الزر الجديد: يظهر فقط في الموبايل (d-md-none) لفتح القائمة الجانبية (يمين) -->
     <button id="mobileMenuBtn" class="btn btn-primary d-md-none" onclick="toggleAdminSidebar()" style="position: fixed; top: 20px; right: 20px; z-index: 100000; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2);">
