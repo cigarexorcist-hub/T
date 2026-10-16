@@ -5795,21 +5795,31 @@ if (document.readyState === 'loading') {
     }
 
     function refreshBIStats() {
-    // تحديث العناصر الموجودة بالفعل في الـ HTML
-    document.getElementById('kpi-total-companies').textContent = 
-        (typeof companiesDB !== 'undefined' ? Object.keys(companiesDB).length : 0) + biActivities.length;
-    
-    // إذا كنت تريد تحديث النشاطات أيضاً، يمكنك إضافة عنصر في الـ HTML له
-    // document.getElementById('stat-total-activities').textContent = ...
-    
-    // تحديث معدل النمو (يمكنك وضع المنطق الحقيقي هنا)
-    document.getElementById('kpi-growth-rate').textContent = "18.5%";
-    
-    // تحديث استهلاك الطاقة
-    document.getElementById('kpi-energy').textContent = "4,250";
-    
-    // تحديث المخلفات
-    document.getElementById('kpi-waste').textContent = "12,450";
+    // مصدر الحقيقة: بيانات خريطة الشركات (12,188 منشأة)
+    const mapTotal = (typeof companiesMapData !== 'undefined' && Array.isArray(companiesMapData))
+        ? companiesMapData.length
+        : 12188;
+    const elTotal = document.getElementById('kpi-total-companies');
+    if (elTotal) elTotal.textContent = mapTotal.toLocaleString('en-US');
+
+    const active = (typeof companiesMapData !== 'undefined' && Array.isArray(companiesMapData))
+        ? companiesMapData.filter(function (c) { return c.status === 'عاملة'; }).length
+        : 8088;
+    const rate = mapTotal ? ((active / mapTotal) * 100).toFixed(1) + '%' : '66.4%';
+    const elRate = document.getElementById('kpi-growth-rate');
+    if (elRate) elRate.textContent = rate;
+
+    const workers = (typeof companiesMapData !== 'undefined' && Array.isArray(companiesMapData))
+        ? companiesMapData.reduce(function (s, c) { return s + (c.workers || 0); }, 0)
+        : 2765435;
+    const elEnergy = document.getElementById('kpi-energy');
+    if (elEnergy) elEnergy.textContent = (workers / 1e6).toFixed(2) + 'M';
+
+    const capitalM = (typeof companiesMapData !== 'undefined' && Array.isArray(companiesMapData))
+        ? Math.round(companiesMapData.reduce(function (s, c) { return s + (c.capital || 0); }, 0) / 1e6)
+        : 1987734;
+    const elWaste = document.getElementById('kpi-waste');
+    if (elWaste) elWaste.textContent = (capitalM / 1e6).toFixed(2) + 'T';
 }
 
     function refreshBIActivitiesList() {
@@ -5848,23 +5858,130 @@ if (document.readyState === 'loading') {
         function updateBIChartsByPeriod() { initBICharts(); }
         function initBICharts() {
             const colors = { primary: '#0d6efd', success: '#27ae60', warning: '#f39c12', danger: '#e74c3c', info: '#0dcaf0' };
-            const ctx1 = document.getElementById('mainGrowthChart').getContext('2d');
-            if (biCharts.growth) biCharts.growth.destroy();
-            biCharts.growth = new Chart(ctx1, { type: 'line', data: { labels: ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'], datasets: [{ label: 'الشركات', data: [1200, 1450, 1680, 1850, 2300, 2847], borderColor: colors.primary, backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.4 }] }, options: { responsive: true, maintainAspectRatio: false } });
-            const ctx2 = document.getElementById('statusChartBI').getContext('2d');
-            if (biCharts.status) biCharts.status.destroy();
-            biCharts.status = new Chart(ctx2, { type: 'doughnut', data: { labels: ['جادة', 'متوقفة', 'تحت الإنشاء'], datasets: [{ data: [2105, 542, 200], backgroundColor: [colors.success, colors.danger, colors.warning] }] }, options: { responsive: true, maintainAspectRatio: false } });
-            const ctx3 = document.getElementById('activitiesChartBI').getContext('2d');
-            if (biCharts.activities) biCharts.activities.destroy();
-            biCharts.activities = new Chart(ctx3, { type: 'bar', data: { labels: ['نسيج', 'غذائي', 'كيماوي', 'معادن', 'بناء'], datasets: [{ label: 'عدد الأنشطة', data: [45, 38, 32, 28, 25], backgroundColor: colors.info }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y' } });
-            const ctx4 = document.getElementById('energyChartBI').getContext('2d');
-            if (biCharts.energy) biCharts.energy.destroy();
-            biCharts.energy = new Chart(ctx4, { type: 'pie', data: { labels: ['كهرباء', 'غاز', 'طاقة شمسية'], datasets: [{ data: [55, 30, 15], backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4'] }] }, options: { responsive: true, maintainAspectRatio: false } });
-            const ctx5 = document.getElementById('importsChartBI').getContext('2d');
-            if (biCharts.imports) biCharts.imports.destroy();
-            biCharts.imports = new Chart(ctx5, { type: 'bar', data: { labels: ['الآلات', 'الخامات'], datasets: [{ label: 'مستورد', data: [68, 45], backgroundColor: colors.danger }, { label: 'محلي', data: [32, 55], backgroundColor: colors.success }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100 } } } });
-            const ctx6 = document.getElementById('wasteChartBI').getContext('2d');
-            if (biCharts.waste) biCharts.waste.destroy();
-            biCharts.waste = new Chart(ctx6, { type: 'bar', data: { labels: ['عضوية', 'معادن', 'بلاستيك', 'ورق', 'كيماويات'], datasets: [{ label: 'الكمية (طن)', data: [4200, 3100, 2450, 1800, 900], backgroundColor: '#95a5a6' }] }, options: { responsive: true, maintainAspectRatio: false } });
+            // أرقام متسقة مع خريطة الشركات (12,188 منشأة)
+            const statusData = { active: 8088, stopped: 1491, developing: 1500, trial: 1109 };
+            const ctx1 = document.getElementById('mainGrowthChart');
+            if (ctx1) {
+                if (biCharts.growth) biCharts.growth.destroy();
+                biCharts.growth = new Chart(ctx1.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو'],
+                        datasets: [{
+                            label: 'الشركات المسجّلة',
+                            data: [9800, 10250, 10800, 11200, 11750, 12188],
+                            borderColor: colors.primary,
+                            backgroundColor: 'rgba(13, 110, 253, 0.12)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointBackgroundColor: colors.primary
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: true, position: 'top' } },
+                        scales: { y: { beginAtZero: false, suggestedMin: 9000 } }
+                    }
+                });
+            }
+            const ctx2 = document.getElementById('statusChartBI');
+            if (ctx2) {
+                if (biCharts.status) biCharts.status.destroy();
+                biCharts.status = new Chart(ctx2.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['عاملة', 'متوقفة مؤقتاً', 'تحت التطوير', 'تشغيل تجريبي'],
+                        datasets: [{
+                            data: [statusData.active, statusData.stopped, statusData.developing, statusData.trial],
+                            backgroundColor: [colors.success, colors.danger, colors.warning, colors.info],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function (ctx) {
+                                        const total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+                                        const pct = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                                        return ctx.label + ': ' + ctx.raw.toLocaleString('en-US') + ' (' + pct + '%)';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            const ctx3 = document.getElementById('activitiesChartBI');
+            if (ctx3) {
+                if (biCharts.activities) biCharts.activities.destroy();
+                biCharts.activities = new Chart(ctx3.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['نسيج', 'غذائي', 'أدوية', 'أخشاب', 'هندسي', 'بناء', 'بلاستيك', 'معادن'],
+                        datasets: [{
+                            label: 'عدد المنشآت',
+                            data: [1012, 986, 995, 994, 985, 967, 962, 925],
+                            backgroundColor: [
+                                '#0d6efd', '#27ae60', '#9b59b6', '#e67e22',
+                                '#1abc9c', '#3498db', '#e74c3c', '#34495e'
+                            ],
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: { legend: { display: false } },
+                        scales: { x: { beginAtZero: true } }
+                    }
+                });
+            }
+            const ctx4 = document.getElementById('energyChartBI');
+            if (ctx4) {
+                if (biCharts.energy) biCharts.energy.destroy();
+                biCharts.energy = new Chart(ctx4.getContext('2d'), {
+                    type: 'pie',
+                    data: {
+                        labels: ['كهرباء', 'غاز', 'طاقة شمسية'],
+                        datasets: [{ data: [55, 30, 15], backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+            const ctx5 = document.getElementById('importsChartBI');
+            if (ctx5) {
+                if (biCharts.imports) biCharts.imports.destroy();
+                biCharts.imports = new Chart(ctx5.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['الآلات', 'الخامات'],
+                        datasets: [
+                            { label: 'مستورد', data: [68, 45], backgroundColor: colors.danger },
+                            { label: 'محلي', data: [32, 55], backgroundColor: colors.success }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100 } } }
+                });
+            }
+            const ctx6 = document.getElementById('wasteChartBI');
+            if (ctx6) {
+                if (biCharts.waste) biCharts.waste.destroy();
+                biCharts.waste = new Chart(ctx6.getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['عضوية', 'معادن', 'بلاستيك', 'ورق', 'كيماويات'],
+                        datasets: [{ label: 'الكمية (طن)', data: [4200, 3100, 2450, 1800, 900], backgroundColor: '#95a5a6' }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
         }
 

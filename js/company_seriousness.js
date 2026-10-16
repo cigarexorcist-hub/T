@@ -471,7 +471,7 @@
     }
     return (
       '<div style="text-align:right;line-height:1.75">' +
-      '<p style="margin:0 0 10px">هام <strong>يجب أن يكون الرابط خاص بالفاتورة </strong> — الرابط المُدخل لا يستوفي شروط الإثبات الرسمي.</p>' +
+      '<p style="margin:0 0 10px">هذا <strong>ليس خللاً في الموقع</strong> — الرابط المُدخل لا يستوفي شروط الإثبات الرسمي.</p>' +
       '<p style="margin:0 0 10px">' +
       detail +
       '</p>' +
@@ -725,7 +725,7 @@
         'لم يُستخرج أي فاتورة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
     } else if (hasFraud && matchCount === 0) {
       classification = 'weak';
-      label = 'مؤشرات عدم اتساق';
+      label = 'مؤشرات تدليس / عدم اتساق';
       reason =
         'اكتُشفت حالات عدم تطابق في اسم المنشأة أو رقم التسجيل (البطاقة الضريبية) أو طرف الفاتورة. العيّنة لا تدعم إثبات الجدية وقد تشير إلى محاولة تدليس.';
     } else if (target && matchCount === 0) {
@@ -747,7 +747,7 @@
       classification = 'review';
       label = 'تحتاج مراجعة دقيقة';
       reason =
-        'يوجد تطابق جزئي لكن مع مؤشرات عدم اتساق في الاسم أو الرقم أو طرف الفاتورة. يُنصح بمراجعة يدوية من المحاسب.';
+        'يوجد تطابق جزئي لكن مع مؤشرات عدم اتساق في الاسم أو الرقم أو طرف الفاتورة. يُنصح بمراجعة يدوية من الأدمن.';
     } else if (ratioValid < 0.5) {
       classification = 'weak';
       label = 'مؤشرات ضعف في العيّنة';
@@ -1496,7 +1496,7 @@
 
     const fraudSummaryHtml =
       s.fraudFlags && s.fraudFlags.length
-        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات عدم اتساق (' +
+        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات تدليس / عدم اتساق (' +
           s.fraudFlags.length +
           '):</strong><ul style="margin:6px 0 0 0;padding-right:18px">' +
           s.fraudFlags
@@ -1702,7 +1702,7 @@
           (sum.fraudFlags && sum.fraudFlags.length
             ? '<div class="csv-fraud-alert" style="margin:10px 0"><strong>تنبيهات عدم اتساق:</strong> ' +
               sum.fraudFlags.length +
-              ' حالة — يُرجى مراجعة الفواتير.</div>'
+              ' حالة — يُرجى مراجعة الأدمن.</div>'
             : '') +
           '<br>' +
           'تم تسجيل النتيجة في <strong>سجل المتابعة</strong> لدى المنظومة، ويمكن الاطلاع عليها فوراً من شاشة المتابعة في تبويب الأدمن (نفس المتصفح).<br><br>' +
@@ -1800,7 +1800,7 @@
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">مبيعات</span> فواتير مبيعات</h4>
+            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة</h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
@@ -1917,10 +1917,64 @@
       review: companies.filter(function (c) { return c.effective === 'review'; }).length
     };
 
+    // شركات تحتاج تدخل فوري (غير جادة / متوقفة / مؤشرات تدليس)
+    const urgentList = companies
+      .filter(function (c) {
+        return c.effective === 'weak' || c.effective === 'stopped';
+      })
+      .slice(0, 8);
+
     function chip(val, label, n) {
       const on = statusFilter === val ? ' on' : '';
       return '<button type="button" class="csv-filter-chip' + on + '" data-filter="' + val + '">' + label + ' (' + n + ')</button>';
     }
+
+    const urgentHtml =
+      cnt.weak + cnt.stopped > 0
+        ? '<div class="csv-card" style="border:2px solid #fecaca;background:linear-gradient(135deg,#fef2f2,#fff);margin-bottom:16px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px">' +
+          '<div><h3 style="margin:0 0 4px;color:#991b1b">🚨 شركات تحتاج تدخل فوري</h3>' +
+          '<div class="sub" style="margin:0">غير جادة أو متوقفة — أولوية للمتابعة أمام القيادة</div></div>' +
+          '<div style="display:flex;gap:8px">' +
+          '<span style="background:#fee2e2;color:#991b1b;padding:4px 12px;border-radius:20px;font-weight:800;font-size:13px">غير جادة: ' +
+          cnt.weak +
+          '</span>' +
+          '<span style="background:#ffedd5;color:#9a3412;padding:4px 12px;border-radius:20px;font-weight:800;font-size:13px">متوقفة: ' +
+          cnt.stopped +
+          '</span></div></div>' +
+          (urgentList.length
+            ? '<div style="overflow-x:auto"><table class="csv-table" style="font-size:12px"><thead><tr>' +
+              '<th>الشركة</th><th>البطاقة الضريبية</th><th>الحالة</th><th>فواتير</th><th></th></tr></thead><tbody>' +
+              urgentList
+                .map(function (c) {
+                  return (
+                    '<tr data-co-key="' +
+                    String(c.key).replace(/"/g, '') +
+                    '" style="cursor:pointer">' +
+                    '<td><strong>' +
+                    (c.companyName || '—') +
+                    '</strong></td>' +
+                    '<td dir="ltr">' +
+                    (c.taxCard || c.entityId ? formatTaxCard(c.taxCard || c.entityId) : '—') +
+                    '</td>' +
+                    '<td><span class="csv-pill ' +
+                    classPill(c.effective) +
+                    '">' +
+                    classLabel(c.effective) +
+                    '</span></td>' +
+                    '<td>' +
+                    (c.invoiceCount || 0) +
+                    '</td>' +
+                    '<td><button type="button" class="csv-btn csv-btn-soft" style="padding:4px 10px;font-size:11px" data-urgent-open="' +
+                    String(c.key).replace(/"/g, '') +
+                    '">تفاصيل</button></td></tr>'
+                  );
+                })
+                .join('') +
+              '</tbody></table></div>'
+            : '<p style="color:#64748b;font-size:13px;margin:0">لا توجد حالات عاجلة في الجلسة الحالية.</p>') +
+          '</div>'
+        : '';
 
     host.innerHTML =
       '<div class="csv-wrap">' +
@@ -1934,6 +1988,7 @@
       '<div><div class="n" style="color:#dc2626">' + cnt.weak + '</div><div class="t">غير جادة</div></div>' +
       '<div><div class="n" style="color:#1d4ed8">' + cnt.started + '</div><div class="t">بدأت النشاط</div></div>' +
       '</div>' +
+      urgentHtml +
       '<div class="csv-card">' +
       '<div class="csv-filter-bar">' +
       chip('all', 'الكل', cnt.all) +

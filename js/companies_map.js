@@ -41,7 +41,10 @@ function initCompaniesMapSection() {
                     <p class="cmap-subtitle">منصة دعم القرار الجغرافي — <strong id="cmap-total-count">12188</strong> منشأة صناعية وسياحية وطاقة (تشمل الفنادق على النيل والبحرين ومفاعل الضبعة)</p>
                 </div>
                 <div class="cmap-header-actions">
-                    <button class="btn btn-sm btn-outline-light" onclick="resetCompaniesFilters()"><i class="fas fa-redo"></i> إعادة تعيين</button>
+                    <button type="button" class="cmap-fs-btn" id="cmap-fullscreen-btn" onclick="toggleCompaniesMapFullscreen()" title="ملء الشاشة">
+                        <i class="fas fa-expand"></i> ملء الشاشة
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="resetCompaniesFilters()"><i class="fas fa-redo"></i> إعادة تعيين</button>
                     <button class="btn btn-sm btn-primary" onclick="exportCompaniesMapData()"><i class="fas fa-download"></i> تصدير البيانات</button>
                 </div>
             </div>
@@ -141,6 +144,12 @@ function initCompaniesMapSection() {
 
                 <!-- Map Area -->
                 <div class="cmap-map-area">
+                    <div class="cmap-loading" id="cmap-loading">
+                        <div class="cmap-loading-spinner"></div>
+                        <div class="cmap-loading-title">جاري تحميل خريطة الشركات</div>
+                        <div class="cmap-loading-sub">تحميل <strong>12,188</strong> منشأة صناعية وسياحية وطاقة...</div>
+                        <div class="cmap-loading-bar"><span></span></div>
+                    </div>
                     <div id="companies-egypt-map"></div>
                     <div class="cmap-map-overlay-info" id="cmap-overlay-info">
                         <i class="fas fa-info-circle"></i> حرّك الماوس على أي نقطة لعرض التفاصيل • استخدم الفلاتر لاستكشاف البيانات
@@ -150,7 +159,9 @@ function initCompaniesMapSection() {
 
             <!-- Bottom detail card (appears on click) -->
             <div class="cmap-detail-card" id="cmap-detail-card" style="display:none;">
-                <button class="cmap-detail-close" onclick="closeCompanyDetail()"><i class="fas fa-times"></i></button>
+                <button type="button" class="cmap-detail-close" onclick="closeCompanyDetail()" title="إغلاق اللوحة" aria-label="إغلاق">
+                    <i class="fas fa-times"></i>
+                </button>
                 <div id="cmap-detail-content"></div>
             </div>
         </div>
@@ -160,11 +171,50 @@ function initCompaniesMapSection() {
     populateCompaniesFilters();
     buildLegend();
 
-    // Init map after short delay to ensure DOM ready
+    // Init map after short delay to ensure DOM ready + إخفاء مؤشر التحميل
     setTimeout(() => {
         initEgyptCompaniesMap();
         applyCompaniesFilters();
-    }, 150);
+        hideCompaniesMapLoading();
+    }, 280);
+}
+
+function hideCompaniesMapLoading() {
+    const el = document.getElementById('cmap-loading');
+    if (!el) return;
+    el.classList.add('hide');
+    setTimeout(function () {
+        if (el.parentNode) el.style.display = 'none';
+    }, 450);
+}
+
+function toggleCompaniesMapFullscreen() {
+    const wrap = document.querySelector('.companies-map-wrapper');
+    const btn = document.getElementById('cmap-fullscreen-btn');
+    if (!wrap) return;
+    const on = wrap.classList.toggle('cmap-fullscreen');
+    if (btn) {
+        btn.innerHTML = on
+            ? '<i class="fas fa-compress"></i> إنهاء ملء الشاشة'
+            : '<i class="fas fa-expand"></i> ملء الشاشة';
+    }
+    setTimeout(function () {
+        if (companiesMap) companiesMap.invalidateSize();
+    }, 200);
+    // ESC للخروج
+    if (on) {
+        window._cmapFsEsc = function (e) {
+            if (e.key === 'Escape') {
+                wrap.classList.remove('cmap-fullscreen');
+                if (btn) btn.innerHTML = '<i class="fas fa-expand"></i> ملء الشاشة';
+                setTimeout(function () { if (companiesMap) companiesMap.invalidateSize(); }, 200);
+                document.removeEventListener('keydown', window._cmapFsEsc);
+            }
+        };
+        document.addEventListener('keydown', window._cmapFsEsc);
+    } else if (window._cmapFsEsc) {
+        document.removeEventListener('keydown', window._cmapFsEsc);
+    }
 }
 
 function populateCompaniesFilters() {
