@@ -471,7 +471,7 @@
     }
     return (
       '<div style="text-align:right;line-height:1.75">' +
-      '<p style="margin:0 0 10px">هذا <strong>ليس خللاً في الموقع</strong> — الرابط المُدخل لا يستوفي شروط الإثبات الرسمي.</p>' +
+      '<p style="margin:0 0 10px">هام <strong>يجب أن يكون الرابط خاص بالفاتورة </strong> — الرابط المُدخل لا يستوفي شروط الإثبات الرسمي.</p>' +
       '<p style="margin:0 0 10px">' +
       detail +
       '</p>' +
