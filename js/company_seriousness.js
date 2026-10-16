@@ -1098,8 +1098,8 @@
       </div>
 
       <div class="csv-card">
-        <h3>① بيانات المنشأة محل الفحص</h3>
-        <div class="sub">أدخل بيانات المنشأة الرسمية — أساس مطابقة العيّنة</div>
+        <h3>① بيانات المنشأة/الشركة </h3>
+        <div class="sub">أدخل بيانات المنشأة/الشركة  طبقا للسجل التجاري </div>
         <div class="csv-field">
           <label>اسم المنشأة / الشركة <span style="color:#dc2626">*</span></label>
           <input type="text" id="csv-company-name" placeholder="اسم المنشأة" value="جا اف سى كونسولتانت ال ال سى">
@@ -1131,12 +1131,12 @@
         </div>
         <div class="csv-links">
           <div class="csv-linkbox">
-            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة (حتى 5)</h4>
+            <h4><span class="csv-tag in">مشتريات</span> معاملات واردة (الصق الرابط او عمل مسح لرمز الفاتورة (QR code))</h4>
             <div id="csv-links-in"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in">＋ رابط تجريبي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة (حتى 5)</h4>
+            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة (الصق الرابط او عمل مسح لرمز الفاتورة)(QR Code )</h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out">＋ رابط تجريبي</button>
           </div>
@@ -1162,7 +1162,7 @@
 
       <div id="csv-result-panel" style="display:none"></div>
       <p class="csv-footnote">
-        هذه شاشة محاكاة للعرض. البيانات تبقى في ذاكرة الجلسة فقط وتُمسح عند إغلاق الصفحة.
+         شاشة محاكاة للعرض .
         مؤشر الجدية مبني على عيّنة معاملات موثقة ولا يغني عن الفحص الشامل أو المستندات الرسمية.
       </p>
     </div>`;
@@ -1628,7 +1628,7 @@
     shell.innerHTML = `
       <div style="max-width:960px;margin:0 auto;padding:20px 16px 40px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div style="font-weight:800;color:#0b1f3a;font-size:15px">منظومة لجان المعاينة · بوابة ${roleLabel}</div>
+          <div style="font-weight:800;color:#0b1f3a;font-size:15px">منظومة إثبات الجدية  · بوابة ${roleLabel}</div>
           <button type="button" id="csv-public-close" style="border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:700;cursor:pointer;font-size:12px">إغلاق والعودة</button>
         </div>
         <div id="csv-public-root"></div>
