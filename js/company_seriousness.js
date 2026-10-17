@@ -1551,14 +1551,26 @@
       miniReportHtml +
       fraudSummaryHtml +
       dateAdviceHtml +
-      analysis.results
-        .map(function (r, i) {
+      (function () {
+        let salesNum = 0;
+        let purchaseNum = 0;
+        return analysis.results.map(function (r, i) {
+          let displayNum;
+          if (r.side === 'مبيعات') {
+            salesNum++;
+            displayNum = salesNum;
+          } else if (r.side === 'مشتريات') {
+            purchaseNum++;
+            displayNum = purchaseNum;
+          } else {
+            displayNum = i + 1;
+          }
           if (!r.ok) {
             return (
               '<div class="csv-inv"><div class="hd"><strong>فاتورة ' +
-              (i + 1) +
-              ' — ' +
-              r.side +
+              displayNum +
+              ' ' +
+              (r.side || '') +
               '</strong><span class="csv-st csv-st-wa">تعذّر الاستخلاص</span></div>' +
               '<div style="font-size:12px;color:#b91c1c;margin-top:6px;line-height:1.5">' +
               (r.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.') +
@@ -1584,7 +1596,7 @@
             '">' +
             '<div class="hd">' +
             '<div><strong>فاتورة ' +
-            (i + 1) +
+            displayNum +
             '</strong> ' +
             sideTag +
             '<div style="font-size:11px;color:#64748b;margin-top:3px">' +
@@ -1632,7 +1644,8 @@
             fmtMoney(d.totalAmount) +
             '</div></div></div>'
           );
-        })
+        });
+      })()
         .join('') +
       '<div class="csv-verdict ' +
       (s.classification === 'strong' ? 'strong' : s.classification === 'weak' ? 'weak' : 'review') +
@@ -2242,14 +2255,27 @@
       ')</div>' +
       (allInvoices.length === 0
         ? '<p style="color:#64748b;font-size:13px">لا توجد فواتير في السجل.</p>'
-        : allInvoices
-            .map(function (item, i) {
+        : (function () {
+            let salesNum = 0;
+            let purchaseNum = 0;
+            return allInvoices.map(function (item, i) {
               const inv = item.inv;
               const rec = item.rec;
+              let displayNum;
+              if (inv.side === 'مبيعات') {
+                salesNum++;
+                displayNum = salesNum;
+              } else if (inv.side === 'مشتريات') {
+                purchaseNum++;
+                displayNum = purchaseNum;
+              } else {
+                displayNum = i + 1;
+              }
               if (!inv.ok) {
                 return (
                   '<div class="csv-inv"><strong>فاتورة ' +
-                  (i + 1) +
+                  displayNum +
+                  (inv.side ? ' ' + inv.side : '') +
                   '</strong> · <span class="csv-st csv-st-wa">تعذّر الاستخلاص</span>' +
                   '<div style="font-size:12px;color:#b91c1c;margin-top:4px">' +
                   (inv.errorMsg || 'تعذّر جلب بيانات الفاتورة من واجهة الهيئة.') +
@@ -2332,7 +2358,7 @@
                 '">' +
                 '<div class="hd">' +
                 '<div><strong>فاتورة ' +
-                (i + 1) +
+                displayNum +
                 '</strong> ' +
                 sideTag +
                 '<div style="font-size:11px;color:#64748b">📅 تاريخ الإصدار: <strong style="color:#0b1f3a">' +
@@ -2396,7 +2422,8 @@
                 fmtMoney(d.totalAmount) +
                 '</div></div></div>'
               );
-            })
+            });
+          })()
             .join('')) +
       '</div></div>';
 
