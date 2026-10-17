@@ -725,9 +725,9 @@
         'لم يُستخرج أي فاتورة موثقة من الروابط المقدّمة. تعذّر بناء مؤشر جدية.';
     } else if (hasFraud && matchCount === 0) {
       classification = 'weak';
-      label = 'مؤشرات تدليس / عدم اتساق';
+      label = 'مؤشرات عدم اتساق';
       reason =
-        'اكتُشفت حالات عدم تطابق في اسم المنشأة أو رقم التسجيل (البطاقة الضريبية) أو طرف الفاتورة. العيّنة لا تدعم إثبات الجدية وقد تشير إلى محاولة تدليس.';
+        'اكتُشفت حالات عدم تطابق في اسم المنشأة أو رقم التسجيل (البطاقة الضريبية) أو طرف الفاتورة. العيّنة لا تدعم إثبات الجدية .';
     } else if (target && matchCount === 0) {
       classification = 'weak';
       label = 'عدم اتساق الهوية';
@@ -747,7 +747,7 @@
       classification = 'review';
       label = 'تحتاج مراجعة دقيقة';
       reason =
-        'يوجد تطابق جزئي لكن مع مؤشرات عدم اتساق في الاسم أو الرقم أو طرف الفاتورة. يُنصح بمراجعة يدوية من الأدمن.';
+        'يوجد تطابق جزئي لكن مع مؤشرات عدم اتساق في الاسم أو الرقم أو طرف الفاتورة. يُنصح بالتأكد من روابط الفواتير المُدحلة.';
     } else if (ratioValid < 0.5) {
       classification = 'weak';
       label = 'مؤشرات ضعف في العيّنة';
@@ -1496,7 +1496,7 @@
 
     const fraudSummaryHtml =
       s.fraudFlags && s.fraudFlags.length
-        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات تدليس / عدم اتساق (' +
+        ? '<div class="csv-fraud-alert" style="margin-bottom:14px"><strong>تنبيهات عدم اتساق (' +
           s.fraudFlags.length +
           '):</strong><ul style="margin:6px 0 0 0;padding-right:18px">' +
           s.fraudFlags
@@ -1702,7 +1702,7 @@
           (sum.fraudFlags && sum.fraudFlags.length
             ? '<div class="csv-fraud-alert" style="margin:10px 0"><strong>تنبيهات عدم اتساق:</strong> ' +
               sum.fraudFlags.length +
-              ' حالة — يُرجى مراجعة الأدمن.</div>'
+              ' حالة — يُرجى المراجعة بدقة.</div>'
             : '') +
           '<br>' +
           'تم تسجيل النتيجة في <strong>سجل المتابعة</strong> لدى المنظومة، ويمكن الاطلاع عليها فوراً من شاشة المتابعة في تبويب الأدمن (نفس المتصفح).<br><br>' +
@@ -1724,7 +1724,7 @@
     const roleTitle = isAuditor ? 'بوابة المحاسب القانوني' : 'بوابة المستثمر';
     const roleDesc = isAuditor
       ? 'تحقق مهني من عيّنة معاملات موثقة مرتبطة بالمنشأة — لأغراض المراجعة والعناية الواجبة.'
-      : 'فحص عيّنة معاملات موثقة مرتبطة بالمنشأة — لأغراض العناية الواجبة الاستثمارية.';
+      : 'فحص عيّنة فواتير الكترونية خاصة بالمنشأة/الشركة.';
     return `
     <div class="csv-wrap">
       <div class="csv-hero">
@@ -1800,7 +1800,7 @@
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="in" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
           <div class="csv-linkbox">
-            <h4><span class="csv-tag out">مبيعات</span> معاملات صادرة</h4>
+            <h4><span class="csv-tag out">مبيعات</span> فواتير مبيعات </h4>
             <div id="csv-links-out"></div>
             <button type="button" class="csv-btn csv-btn-soft" style="padding:5px 10px;font-size:12px;margin-top:4px" data-demo="out" title="يضع رابط مشاركة حقيقي — الاستخلاص من API الحي">＋ رابط اختبار حي</button>
           </div>
@@ -2521,7 +2521,7 @@
     shell.innerHTML = `
       <div style="max-width:960px;margin:0 auto;padding:20px 16px 40px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div style="font-weight:800;color:#0b1f3a;font-size:15px">مؤشر إثبات الجدية  · بوابة ${roleLabel}</div>
+          <div style="font-weight:800;color:#0b1f3a;font-size:15px">مؤشر إستمرار الجدية  · بوابة ${roleLabel}</div>
           <button type="button" id="csv-public-close" style="border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:700;cursor:pointer;font-size:12px">إغلاق والعودة</button>
         </div>
         <div id="csv-public-root"></div>
